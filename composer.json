@@ -23,6 +23,6 @@
     "symfony/validator": "^6.3",
     "symfony/routing": "^6.3",
     "doctrine/orm": "^2.1",
-    "phpoffice/phpspreadsheet": "dev-master"
+    "phpoffice/phpspreadsheet": "^1.29.0"
   }
 }
