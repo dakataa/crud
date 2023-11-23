@@ -14,7 +14,7 @@
       "email": "yor.lazarov@gmail.com"
     }
   ],
-  "minimum-stability": "dev",
+  "minimum-stability": "stable",
   "require": {
     "php": "^8.1",
     "symfony/dependency-injection": "^6.3",
@@ -22,7 +22,7 @@
     "symfony/form": "^6.3",
     "symfony/validator": "^6.3",
     "symfony/routing": "^6.3",
-    "doctrine/orm": "^3",
+    "doctrine/orm": "^2.1",
     "phpoffice/phpspreadsheet": "dev-master"
   }
 }
