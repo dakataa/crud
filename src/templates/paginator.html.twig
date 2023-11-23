@@ -1,0 +1,32 @@
+{% if (objects is defined) and (route is defined) %}
+    <div class="d-flex flex-column">
+        <small class="mb-2 text-center">
+            {{ objects.count }} - {{ 'Page'|trans }} {{ objects.page }} {{ 'of'|trans }} {{ objects.maxPages }}
+        </small>
+        {% if objects.maxPages > 1 %}
+            <nav aria-label="Page navigation" class="m-auto text-center d-inline">
+                <ul class="pagination pagination-sm">
+                    {% if (objects.page > 1) and (objects.maxPages > 5) %}
+                        <li class="page-item">
+                            <a title="{{ 'first page'|trans }}" {% if ajax is defined %}data-toggle="ajax" data-target="{{ ajax }}" data-mode="replace"{% endif %} href="{{ url(route, params|default({})|merge({page: 1})) }}" class="page-link">
+                                <i aria-hidden="true" class="fas fa-angle-double-left"></i>
+                            </a>
+                        </li>
+                    {% endif %}
+                    {% for page in objects.getLinks %}
+                        <li class="page-item{% if page == objects.page %} active{% endif %}">
+                            <a {% if ajax is defined %}data-toggle="ajax" data-target="{{ ajax }}" data-mode="replace"{% endif %} href="{{ url(route, params|default({})|merge({page: page})) }}" class="page-link">{{ page }}</a>
+                        </li>
+                    {% endfor %}
+                    {% if (objects.page < objects.maxPages) and (objects.maxPages > 5) %}
+                        <li class="page-item">
+                            <a title="{{ 'last page'|trans }}" {% if ajax is defined %}data-toggle="ajax" data-target="{{ ajax }}" data-mode="replace" data-changeurl="true"{% endif %} href="{{ url(route, params|default({})|merge({page: objects.maxPages})) }}" class="page-link">
+                                <i aria-hidden="true" class="fas fa-angle-double-right"></i>
+                            </a>
+                        </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        {% endif %}
+    </div>
+{% endif %}

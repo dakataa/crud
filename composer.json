@@ -1,0 +1,28 @@
+{
+  "name": "dakataa/crud",
+  "description": "Symfony CRUD",
+  "type": "library",
+  "license": "MIT",
+  "autoload": {
+    "psr-4": {
+      "Dakataa\\Crud\\": "src/"
+    }
+  },
+  "authors": [
+    {
+      "name": "Yordan Lazarov",
+      "email": "yor.lazarov@gmail.com"
+    }
+  ],
+  "minimum-stability": "dev",
+  "require": {
+    "php": "^8.1",
+    "symfony/dependency-injection": "^6.3",
+    "symfony/http-kernel": "^6.3",
+    "symfony/form": "^6.3",
+    "symfony/validator": "^6.3",
+    "symfony/routing": "^6.3",
+    "doctrine/orm": "^3",
+    "phpoffice/phpspreadsheet": "dev-master"
+  }
+}
