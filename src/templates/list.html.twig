@@ -1,5 +1,5 @@
-{% block title %}{{ (title ?? '')|trans }}{% endblock %}
-
+{% block title %}{{ (title ?? 'List')|trans }}{% endblock %}
+{% set hasFilters = filterForm.vars.data|length %}
 {% block body %}
     <div class="list">
         <div class="content-header d-md-flex mb-3 justify-content-between align-items-center">
@@ -12,38 +12,29 @@
             {% endblock %}
             <div class="btn-group btn-group-sm">
                 {% block actions %}
-                    {% for actionKey, options in actions %}
-                        {% set action = options.action ?? actionKey %}
-                        {% set routeName = controllerClass|toRoute(action) %}
-                        {% set isGranted = rolesForRoute(routeName)|reduce((a, b) => (a is empty or a == true ? is_granted(b) : false), null) %}
-                        {% if isGranted == true or (is_granted('ROLE_SUPER_ADMIN') == true) %}
-                            <a href="{{ path(routeName, options.parameters ?? {}) }}"
-                               class="btn {{ options.attr.class|default('btn-success') }}" {% for attr, value in (options.attr|default([]))|filter((value, attr) => attr != 'class') %} {{ attr|replace({'_': '-'}) }}="{{ value }}"{% endfor %}>
-                            <i class="fas {{ options.icon|default('fa-' ~ action) }}"></i> {{ (options.label|default(action))|trans }}
-                            </a>
-                        {% endif %}
-                    {% endfor %}
+                    <a href="{{ generatePath('add') }}" class="btn btn-success">
+                        <i class="fas fa-plus"></i> {{ 'Add'|trans }}
+                    </a>
                 {% endblock %}
-                {% if filter %}
+                {% if filterForm %}
                     <div class="btn-group btn-group-sm">
-                        <button type="button" class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+                        <button type="button" class="btn btn-outline-secondary dropdown-toggle"
+                                data-bs-toggle="dropdown">
                             {{ 'Filter'|trans }} <span class="caret"></span>
                         </button>
 
                         <div class="dropdown-menu dropdown-menu-right" aria-label="menu">
                             <div class="filter">
-                                {{ form_start(filter, { attr: {'novalidate': 'novalidate'}}) }}
-                                {% for child in filter %}
-                                    {{ form_row(child) }}
-                                {% endfor %}
+                                {{ form_start(filterForm, { attr: {'novalidate': 'novalidate'}}) }}
+                                {{ form_rest(filterForm) }}
                                 <div class="mb-3 btn-group-sm">
                                     <button type="submit" class="btn btn-success me-2">{{ 'Search'|trans }}</button>
                                     {% if hasFilters %}
                                         <a class="btn btn-default"
-                                           href="{{ path(controllerClass|toRoute('filter'), { _reset: 1 }) }}">{{ 'Reset'|trans }}</a>
+                                           href="{{ generatePath('filter', { _reset: 1 }) }}">{{ 'Reset'|trans }}</a>
                                     {% endif %}
                                 </div>
-                                {{ form_end(filter) }}
+                                {{ form_end(filterForm) }}
                             </div>
                         </div>
                     </div>
@@ -54,36 +45,36 @@
             </div>
         </div>
 
-        {{ form_start(batch, { 'attr': {'novalidate': 'novalidate', 'autocomplete':'off'}}) }}
+        {{ form_start(batchForm, { 'attr': {'novalidate': 'novalidate', 'autocomplete':'off'}}) }}
 
-        {% if objects|length %}
+        {% if results.current %}
             {% if hasFilters %}
                 <div class="filters d-flex mb-sm overflow-auto">
-                    {% macro filterList(filter, controllerClass) %}
-                        {% for v in filter.children|filter(f => f.vars.value) %}
+                    {% macro filterList(filterForm) %}
+                        {% for v in filterForm.children|filter(f => f.vars.value is not empty) %}
                             {% if v.children|length %}
-                                {{ _self.filterList(v, controllerClass) }}
+                                {{ _self.filterList(v) }}
                             {% else %}
                                 <div class="filters-item d-flex text-nowrap flex-column me-2 mb-2">
-                                    {% set filterVars = filter.vars.data|filter((fv,fk) => fk != v.vars.name) %}
+                                    {% set filterVars = filterForm.vars.data|filter((fv,fk) => fk != v.vars.name) %}
                                     <small class="mb-2">{{ (v.vars.label ?? v.vars.name)|capitalize|trans }}</small>
                                     <div class="btn btn-sm btn-primary me-1 mb-1">
                                         {{ v.vars.choices is defined ? (v.vars.choices|filter(c => c.value == v.vars.value)|first).label ?? v.vars.value : (v.vars.value is iterable ? '' : v.vars.value) }}
-                                        <a href="{{ path(controllerClass|toRoute('filter'), { filter: filterVars }) }}"
+                                        <a href="{{ generatePath('filter', { filter: filterVars }) }}"
                                            class="text-white">&times;</a>
                                     </div>
                                 </div>
                             {% endif %}
                         {% endfor %}
                     {% endmacro %}
-                    {{ _self.filterList(filter, controllerClass) }}
+                    {{ _self.filterList(filterForm) }}
                 </div>
             {% endif %}
             <div class="table-responsive">
                 <table class="table table-striped table-hover table-bordered">
                     <thead>
                     <tr>
-                        {% if batch.method is defined %}
+                        {% if batchForm.method is defined %}
                             <th width="1%"><input type="checkbox" data-toggle="checkall" data-target=".ids"/></th>
                         {% endif %}
                         {% for key, column in columns|filter((options, column) => (rolesForClass(column.permission|default('')) is empty or (rolesForClass(column.permission|default('index'))|reduce((a, b) => (a == null or a == true ? is_granted(b) : false), null)) or (is_granted('ROLE_SUPER_ADMIN') == true))) %}
@@ -106,61 +97,51 @@
                                 {% endapply %}
                             {% endblock %}
                         {% endfor %}
-                        {% if objectActions|length %}
-                            <th class="text-end">{{ 'Actions'|trans }}</th>
-                        {% endif %}
+                        <th class="text-end">{{ 'Actions'|trans }}</th>
                     </tr>
                     </thead>
                     <tbody>
-                    {% if objects.results is not empty %}
-                        {% for object in objects.results %}
-                            {% apply spaceless %}
-                                <tr id="row_{{ object.id|default(0) }}">
-                                    {% if batch.method is defined %}
-                                        <td>
-                                            <input type="checkbox" class="ids" name="batch[ids][]"
-                                                   value="{{ object.id }}"/>
-                                        </td>
+                    {% if results.current %}
+                        {% for object in results %}
+                            <tr id="row_{{ loop.index }}">
+                                {% if batchForm.method is defined %}
+                                    <td>
+                                        <input type="checkbox" class="ids" name="batch[ids][]" value="{{ object.entity.id }}"/>
+                                    </td>
+                                {% endif %}
+                                {% for column in object.data %}
+                                    {% set blockKey = 'column_' ~ column.alias %}
+                                    {% set blockKeyValue = 'column_' ~ column.alias ~ '_value' %}
+                                    {% if (block(blockKey) is defined) and (block(blockKey) is not empty) %}
+                                        {{ block(blockKey)|raw }}
+                                    {% else %}
+                                        {% block blockKey %}
+                                            <td>
+                                                {% block blockKeyValue %}
+                                                    {{ column.value }}
+                                                {% endblock %}
+                                            </td>
+                                        {% endblock %}
                                     {% endif %}
-                                    {% for key, column in columns|filter((options, column) => (rolesForClass(column.permission|default('')) is empty or (rolesForClass(column.permission|default('index'))|reduce((a, b) => (a is empty or a == true ? is_granted(b) : false), null)) or (is_granted('ROLE_SUPER_ADMIN') == true))) %}
-                                        {% if (block(key) is defined) and (block(key) is not empty) %}
-                                            {{ block(key)|raw }}
-                                        {% else %}
-                                            {% block key %}
-                                                <td>
-                                                    {% if objectColumns[key] is defined %}
-                                                        {{ attribute(object, key)|toString|trans }}
-                                                    {% endif %}
-                                                </td>
-                                            {% endblock %}
-                                        {% endif %}
-                                    {% endfor %}
-                                    {% if objectActions|length %}
-                                        <td class="text-end">
-                                            <div class="btn-group btn-group-sm">
-                                                {% for actionKey, options in objectActions %}
-                                                    {% set action = options.action ?? actionKey %}
-                                                    {% set routeName = controllerClass|toRoute(action) %}
-                                                    {% set isGranted = (rolesForRoute(routeName)|default([]))|reduce((a, b) => (a is empty or a == true ? is_granted(b) : false), null) %}
-                                                    {% if isGranted == true or (is_granted('ROLE_SUPER_ADMIN') == true) %}
-                                                        <a {% if options.confirm is defined %}onclick="return confirm('{{ options.confirm|trans }}')"{% endif %}
-                                                           href="{{ path(routeName, (options.parameters ?? {})|merge({id: object.id})) }}"
-                                                           class="btn btn-sm {{ options.attr.class|default('btn-outline-primary') }}" {% for attr, value in (options.attr|default([]))|filter((value, attr) => attr != 'class') %} {{ attr|replace({'_': '-'}) }}="{{ value }}"{% endfor %}>
-                                                        <i class="fas {{ options.icon|default('fa-' ~ action) }}"></i>
-                                                        <span class="d-none d-xl-inline ms-2">{{ (options.label|default(action|capitalize))|trans }}</span>
-                                                        </a>
-                                                    {% endif %}
-                                                {% endfor %}
-
-                                            </div>
-                                        </td>
-                                    {% endif %}
-                                </tr>
-                            {% endapply %}
+                                {% endfor %}
+                                <td class="text-end">
+                                    <a href="{{ generatePath('edit', {id: entityPrimaryKey(object.entity)}) }}"
+                                       class="btn btn-sm btn-outline-primary">
+                                        <i class="fas fa-trash"></i>
+                                        Edit
+                                    </a>
+                                    <a onclick="return confirm('Are you sure?')"
+                                       href="{{ generatePath('delete', {id: entityPrimaryKey(object.entity)}) }}"
+                                       class="btn btn-sm btn-outline-danger">
+                                        <i class="fas fa-trash"></i>
+                                        Remove
+                                    </a>
+                                </td>
+                            </tr>
                         {% endfor %}
                     {% else %}
                         <tr>
-                            <td colspan="{{ columns|length + (objectActions|length ? 1 : 0) + (batch.method is defined ? 1 : 0) }}">{{ 'Not results found.'|trans }}</td>
+                            <td colspan="{{ columns|length + 1 + (batchForm.method is defined ? 1 : 0) }}">{{ 'Not results found.'|trans }}</td>
                         </tr>
                     {% endif %}
                     </tbody>
@@ -171,10 +152,10 @@
         {% endif %}
 
         <div class="actions d-flex flex-row flex-wrap align-items-center mb-3">
-            {% if batch.method is defined %}
+            {% if batchForm.method is defined %}
                 <div class="btn-group me-2 mb-2">
                     <div class="input-group flex-nowrap">
-                        {{ form_widget(batch.method, {attr: {class: 'form-control'}}) }}
+                        {{ form_widget(batchForm.method, {attr: {class: 'form-control'}}) }}
 
                         <button type="submit" class="btn btn-outline-secondary">{{ 'Go'|trans }}</button>
                     </div>
@@ -190,18 +171,18 @@
         </div>
 
         <div class="d-flex justify-content-center">
-            {% include 'paginator.html.twig' with { objects: objects, route: controllerClass|toRoute('index') } %}
+            {% include '@DakataaCrud/paginator.html.twig' with { dataProvider: dataProvider, route: getRoute('index')} %}
         </div>
 
-        {{ form_end(batch, {'render_rest': false}) }}
+        {{ form_end(batchForm, {'render_rest': false}) }}
     </div>
     <script type="text/javascript">
-        let resultsLimit = document.querySelector('#results-limit');
-        resultsLimit.value = {{ resultsLimit }};
-        resultsLimit.addEventListener('change', function () {
-            let url = new URL(document.location.href);
-            url.searchParams.set('limit', resultsLimit.value);
-            document.location = url;
-        });
+		let resultsLimit = document.querySelector('#results-limit');
+		resultsLimit.value = {{ dataProvider.maxResults }};
+		resultsLimit.addEventListener('change', function () {
+			let url = new URL(document.location.href);
+			url.searchParams.set('limit', resultsLimit.value);
+			document.location = url;
+		});
     </script>
 {% endblock %}

@@ -21,6 +21,10 @@ class Paginator
 	{
 		$this->maxResults = $maxResults;
 
+		$this->ormPaginator
+			->getQuery()
+			->setMaxResults($maxResults);
+
 		return $this;
 	}
 
