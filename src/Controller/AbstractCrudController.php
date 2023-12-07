@@ -587,20 +587,25 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 
 		$classInstance = new ReflectionClass(static::class);
 		$methods = [];
-		foreach ($classInstance->getMethods(ReflectionMethod::IS_PUBLIC) as $reflectionMethod) {
-			if(str_starts_with($reflectionMethod->getShortName(), 'batch')) {
+		foreach ($classInstance->getMethods(ReflectionMethod::IS_PUBLIC | ReflectionMethod::IS_PROTECTED) as $reflectionMethod) {
+			if(!str_starts_with($reflectionMethod->getShortName(), 'batch')) {
 				continue;
 			}
 
 			$action = Container::underscore(str_replace('batch', '', $reflectionMethod->getShortName()));
+			if(empty($action)) {
+				continue;
+			}
+
 			$methods[] = [
 				'action' => $action,
 				'label' => $action
 			];
 		}
 
-		foreach ($methods as $options) {
-			['action' => $action, 'label' => $label] = $options;
+		$choices = [];
+		foreach ($methods as $method) {
+			['action' => $action, 'label' => $label] = $method;
 
 //			$method = sprintf('batch%s', Container::camelize(Container::underscore($action)));
 //			// TODO
@@ -611,14 +616,14 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 //				continue;
 //			}
 
-			$methods[$label] = $action;
+			$choices[$label] = $action;
 		}
 
-		if (!empty($methods)) {
+		if (!empty($choices)) {
 			$form->add(
 				'method',
 				ChoiceType::class,
-				['choices' => $methods, 'placeholder' => '', 'constraints' => [new Assert\NotBlank()]]
+				['choices' => $choices, 'placeholder' => '', 'constraints' => [new Assert\NotBlank()]]
 			);
 		}
 
