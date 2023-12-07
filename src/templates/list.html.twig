@@ -40,7 +40,7 @@
                     </div>
                 {% endif %}
                 {% if hasFilters %}
-                    <a href="{{ path(controllerClass|toRoute('filter'), { _reset: 1 }) }}" class="btn btn-outline-dark">x</a>
+                    <a href="{{ generatePath('filter', { _reset: 1 }) }}" class="btn btn-outline-dark">x</a>
                 {% endif %}
             </div>
         </div>

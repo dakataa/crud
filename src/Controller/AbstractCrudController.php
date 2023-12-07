@@ -14,6 +14,7 @@ use DateTimeInterface;
 use Doctrine\Common\Collections\Criteria;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Mapping\JoinColumn;
 use Doctrine\ORM\Query\Expr\Join;
 use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ObjectRepository;
@@ -161,35 +162,35 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 					}
 				}
 
+				if ($getter = $column->getGetter()) {
+					if (is_string($getter)) {
+						$getter = sprintf('get%s', (preg_replace('/^get/i', '', Container::camelize($getter))));
+
+						if (method_exists($entity, $getter)) {
+							$value = $entity->$getter();
+						}
+					}
+
+					if (is_callable($getter)) {
+						$value = $getter($value);
+					}
+				}
+
 				if (null === $value && isset($additionalEntityFields[$field])) {
 					$value = $additionalEntityFields[$field];
 				}
 
-				if (is_object($value)) {
-					if ($getter = $column->getGetter()) {
-						if (is_string($getter)) {
-							$getter = sprintf('get%s', (preg_replace('/^get/i', '', Container::camelize($getter))));
-
-							if (method_exists($value, $getter)) {
-								$value = $value->$getter();
-							}
-						}
-
-						if (is_callable($getter)) {
-							$value = $getter($value);
-						}
-					} else {
-						if ($value instanceof Stringable) {
-							$value = $value->__toString();
-						} else {
-							if ($value instanceof DateTime) {
-								$value = $value->format($column->getOption('dateFormat') ?: DateTimeInterface::ATOM);
-							}
-						}
+				if ($value instanceof Stringable) {
+					$value = $value->__toString();
+				} else {
+					if ($value instanceof DateTime) {
+						$value = $value->format($column->getOption('dateFormat') ?: DateTimeInterface::ATOM);
 					}
 				}
+
 				try {
-					$column->setValue($value);
+					$enum = $column->getEnum() ?: [];
+					$column->setValue($enum[$value] ?? $value);
 				} catch (TypeError $e) {
 
 				}
@@ -231,7 +232,6 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 			->buildCustomQuery($request, $query);
 
 		$dataProvider = (new Paginator($query, $request->query->getInt('page', 1)))->setMaxResults($resultsLimit);
-
 
 		return $this->response('list', [
 //			'title' => $this->getTitle(),
@@ -322,7 +322,6 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 			$row = [];
 			foreach ($columns as $columnField => $columnOption) {
 				$field = $columnOption->field ?? $columnField;
-
 				$value = null;
 				foreach (['get', 'has', 'is'] as $methodPrefix) {
 					$method = sprintf('%s%s', $methodPrefix, Container::underscore($field));
@@ -838,6 +837,16 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 			$fieldName = $column->getField();
 			if ($fieldMetadata) {
 				$fieldName = self::ENTITY_TABLE_ALIAS.'.'.$fieldMetadata['fieldName'];
+			} else {
+				if(!str_contains($fieldName, '.')) {
+					continue;
+				}
+
+				[$alias, $field] = explode('.', $fieldName);
+				$joinColumn = array_filter($entity->joins, fn(EntityJoinColumn $c) => $c->alias == $alias)[0] ?? null;
+				if(!$joinColumn) {
+					continue;
+				}
 			}
 
 			$query
@@ -858,9 +867,9 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 			}
 
 			$modelColumn = $this->getEntityFieldMetadata($filter);
-			$column = $columns[$filter];
+			$column = $columns[$filter] ?? null;
 
-			if ($modelColumn === null && !$column->getSearchable()) {
+			if ($column === null || ($modelColumn === null && !$column->getSearchable())) {
 				continue;
 			}
 
