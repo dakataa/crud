@@ -7,6 +7,8 @@ use Symfony\Component\HttpKernel\Bundle\Bundle;
 
 class DakataaCrudBundle extends Bundle
 {
+	const NAME = 'dakataa_crud';
+	
 	public function build(ContainerBuilder $container): void
 	{
 	}

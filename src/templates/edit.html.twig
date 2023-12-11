@@ -1,3 +1,5 @@
+{% extends [getParameter('layout')|default(''), '@DakataaCrud/layout/default.html.twig'] %}
+
 {%- block title -%}
     {% if (object is defined) and object.id|default(false) != false %}{{ 'Edit'|trans }}{% else %}{{ 'Add'|trans }}{% endif %}
 {% endblock title %}

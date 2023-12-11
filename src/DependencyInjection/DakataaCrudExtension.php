@@ -2,6 +2,7 @@
 
 namespace Dakataa\Crud\DependencyInjection;
 
+use Dakataa\Crud\DakataaCrudBundle;
 use Dakataa\Crud\Twig\Extension\CrudExtension;
 use Symfony\Component\Config\Definition\ConfigurationInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -20,5 +21,8 @@ class DakataaCrudExtension extends Extension
 			->register(CrudExtension::class, CrudExtension::class)
 			->addTag('twig.extension')
 			->setAutowired(true);
+
+		$container
+			->setParameter(DakataaCrudBundle::NAME, array_shift($configs));
 	}
 }

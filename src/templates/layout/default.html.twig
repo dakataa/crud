@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="{{ app.request.locale }}">
+<head>
+    <title>{% block title %}Admin{% endblock %}</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no"/>
+    {% block stylesheets %}
+        {{ encore_entry_link_tags('backend') }}
+    {% endblock %}
+</head>
+<body>
+<header>
+    <div class="wrap">
+        <button data-toggle="class" data-target="body" data-class="toggle-nav" data-skip="#nav" class="btn nav-toggler">
+            <i></i>
+        </button>
+
+        <div class="first-nav">
+            <nav>
+                <a class="logo" href="#">{{ appName|default('Admin') }}</a>
+            </nav>
+        </div>
+        <nav class="second-nav">
+            {% if is_granted('ROLE_USER') %}
+                <div class="user dropdown">
+                    <a class="avatar" data-bs-toggle="dropdown">
+                        <span class="initials">{{ app.user.firstName }}</span>
+                    </a>
+                    <div class="dropdown-menu">
+                        <div class="dropdown-item">
+                            {{ app.user.name ?? 'Unknown' }}
+                        </div>
+                        <a class="dropdown-item" href="{{ url('logout') }}">
+                            <i class="fas fa-power"></i> {{ 'Logout'|trans }}
+                        </a>
+                    </div>
+                </div>
+            {% endif %}
+        </nav>
+    </div>
+</header>
+<main>
+    <!-- NAVIGATION -->
+    <div class="content">
+{#        {% include "layout/component/breadcrumb.html.twig" %}#}
+        {% if app.session.flashbag.has('notice') %}
+            <div class="alert-messages">
+                <div class="alert alert-dismissible alert-success d-print-none">
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-hidden="true"></button>
+                    {% for flashMessage in app.session.flashbag.get('notice') %}
+                        <div class="flash-notice">
+                            {{ flashMessage }}
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        {% endif %}
+
+        <div class="workspace">
+            {% block body %}{% endblock %}
+        </div>
+    </div>
+</main>
+<div data-page-preloader="true" class="page-preloader">
+    <div class="page-preloader-holder">
+        <div class="m-auto" style="width: 150px; height: 40px;" data-lottie="{{ asset('animations/spinner.json', 'img') }}"></div>
+    </div>
+</div>
+
+{{ encore_entry_script_tags('backend') }}
+{% block javascripts %}
+    <script type="text/javascript">
+        window.addEventListener('beforeunload', function () {
+            document.body.classList.add('unload');
+        });
+
+        window.addEventListener('unload', function () {
+            document.body.classList.remove('unload');
+        });
+
+        const updateNavigationActivity = function () {
+            let matches = [],
+                maxMatchLength = 0;
+            document.querySelectorAll('.navigation .item.active').forEach((el) => el.classList.remove('active'));
+            document.querySelectorAll('.navigation a[href]').forEach(function (el) {
+                if (document.location.href.match((new RegExp('^' + el.href)))) {
+                    maxMatchLength = Math.max(maxMatchLength, el.href.split('/').length)
+                    matches.push(el)
+                }
+            });
+
+            matches.forEach(el => {
+                if (el.href.split('/').length !== maxMatchLength) {
+                    return;
+                }
+
+                let closestItem = el.closest('.item');
+                while (closestItem !== null) {
+                    closestItem.classList.add('active');
+                    closestItem = closestItem.parentElement.closest('.item');
+                }
+
+                loadCollapseModule().then((Collapse) => {
+                    if (el.closest('.collapse')) {
+                        Collapse.getOrCreateInstance(el.closest('.collapse')).show();
+                    }
+                });
+            });
+        }
+
+        updateNavigationActivity();
+
+        const handleCollapseEvents = function (e) {
+            e.target.closest('.item').classList.toggle('active', e.type === 'show.bs.collapse');
+        };
+
+        document.querySelectorAll('.navigation .collapse').forEach((el) => {
+            el.addEventListener('show.bs.collapse', handleCollapseEvents);
+            el.addEventListener('hide.bs.collapse', handleCollapseEvents);
+        });
+    </script>
+
+
+    <script type="text/javascript">
+        let navigation = document.querySelector('.navigation'),
+            navigationMark = navigation.querySelector('.mark');
+
+        let startMouseX = 0,
+            startWidth = Math.max(localStorage.getItem('nav-width') || 200, navigation.querySelector('nav').offsetWidth);
+
+        navigation.parentElement.style.setProperty('--nav-width', startWidth + 'px');
+        navigation.parentElement.classList.toggle('closed', startWidth < 200);
+
+        let mouseMoveCallback = function (e) {
+            let widthDiff = e.clientX - startMouseX,
+                nextWidth = Math.min(360, Math.max(80, startWidth + widthDiff));
+
+            navigation.parentElement.style.setProperty('--nav-width', nextWidth + 'px');
+            navigation.querySelector('nav').style.width = nextWidth + 'px';
+
+            localStorage.setItem('nav-width', nextWidth.toString());
+        };
+
+        navigationMark.addEventListener('mousedown', function (e) {
+            startMouseX = e.clientX;
+            startWidth = navigation.querySelector('nav').offsetWidth;
+            navigationMark.style.cursor = 'col-resize';
+            navigation.classList.add('resizing');
+
+            document.addEventListener('mousemove', mouseMoveCallback);
+            document.addEventListener('mouseup', function () {
+                navigationMark.style.removeProperty('cursor');
+                document.removeEventListener('mousemove', mouseMoveCallback);
+                navigation.parentElement.classList.toggle('closed', navigation.querySelector('nav').offsetWidth < 200);
+                navigation.querySelector('nav').style.removeProperty('width');
+                navigation.classList.remove('resizing');
+
+            }, {once: true});
+        });
+
+    </script>
+
+    <script type="text/javascript">
+        document.liveQuery('[data-property] .preloader', (i) => {
+            let l = document.createElement('i')
+            l.setAttribute('data-lottie', '{{ asset('animations/spinner.json', 'img') }}');
+            i.append(l);
+        });
+
+        document.liveQuery('.loader', (i) => {
+            let loader = '{{ asset('animations/loading_dots_white.json', 'img') }}';
+            switch (i.dataset.color) {
+                case 'pink': {
+                    loader = '{{ asset('animations/loading_dots.json', 'img') }}';
+                    break;
+                }
+            }
+            let l = document.createElement('i')
+            l.setAttribute('data-lottie', loader);
+            i.append(l);
+        });
+    </script>
+{% endblock %}
+</body>
+</html>

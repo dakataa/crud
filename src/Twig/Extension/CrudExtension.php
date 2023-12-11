@@ -2,8 +2,10 @@
 
 namespace Dakataa\Crud\Twig\Extension;
 
+use Dakataa\Crud\DakataaCrudBundle;
 use Doctrine\ORM\EntityManagerInterface;
 use Exception;
+use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Routing\RouterInterface;
 use Twig\Extension\AbstractExtension;
@@ -16,7 +18,8 @@ class CrudExtension extends AbstractExtension
 	public function __construct(
 		protected RequestStack $requestStack,
 		protected EntityManagerInterface $entityManager,
-		protected RouterInterface $router
+		protected RouterInterface $router,
+		protected ParameterBagInterface $parameterBag
 	) {
 	}
 
@@ -27,6 +30,7 @@ class CrudExtension extends AbstractExtension
 			new TwigFunction('getRoute', [$this, 'getRoute']),
 			new TwigFunction('entityPrimaryKey', [$this, 'entityPrimaryKey']),
 			new TwigFunction('controllerClass', [$this, 'getControllerClass']),
+			new TwigFunction('getParameter', [$this, 'getParameter']),
 		];
 	}
 
@@ -66,5 +70,10 @@ class CrudExtension extends AbstractExtension
 	public function getControllerClass(): string
 	{
 		return explode('::', $this->requestStack->getMainRequest()->attributes->get('_controller'))[0];
+	}
+
+	public function getParameter(string $key): mixed
+	{
+		return $this->parameterBag->get(DakataaCrudBundle::NAME)[$key] ?? null;
 	}
 }

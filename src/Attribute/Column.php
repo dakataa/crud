@@ -3,6 +3,7 @@
 namespace Dakataa\Crud\Attribute;
 
 use Attribute;
+use Dakataa\Crud\Enum\SortTypeEnum;
 use Stringable;
 use Symfony\Component\DependencyInjection\Container;
 
@@ -18,6 +19,7 @@ class Column
 		protected bool $raw = false,
 		protected int|float|string|Stringable|null $value = null,
 		protected SearchableOptions|bool $searchable = true,
+		protected bool|SortTypeEnum $sortable = true,
 		protected array $options = [],
 		protected mixed $roles = null
 	) {
@@ -153,5 +155,16 @@ class Column
 		return $this;
 	}
 
+	public function getSortable(): SortTypeEnum|bool
+	{
+		return $this->sortable;
+	}
+
+	public function setSortable(SortTypeEnum|bool $sortable): Column
+	{
+		$this->sortable = $sortable;
+
+		return $this;
+	}
 
 }

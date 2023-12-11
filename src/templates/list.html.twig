@@ -1,3 +1,5 @@
+{% extends [getParameter('layout')|default(''), '@DakataaCrud/layout/default.html.twig'] %}
+
 {% block title %}{{ (title ?? 'List')|trans }}{% endblock %}
 {% set hasFilters = filterForm.vars.data|length %}
 {% block body %}
@@ -77,24 +79,25 @@
                         {% if batchForm.method is defined %}
                             <th width="1%"><input type="checkbox" data-toggle="checkall" data-target=".ids"/></th>
                         {% endif %}
-                        {% for key, column in columns|filter((options, column) => (rolesForClass(column.permission|default('')) is empty or (rolesForClass(column.permission|default('index'))|reduce((a, b) => (a == null or a == true ? is_granted(b) : false), null)) or (is_granted('ROLE_SUPER_ADMIN') == true))) %}
-                            {% set columnHeaderBlock = key ~ '_header' %}
+                        {% for column in columns|filter((options, column) => (rolesForClass(column.permission|default('')) is empty or (rolesForClass(column.permission|default('index'))|reduce((a, b) => (a == null or a == true ? is_granted(b) : false), null)) or (is_granted('ROLE_SUPER_ADMIN') == true))) %}
+                            {% set columnHeaderBlock = column.alias ~ '_header' %}
                             {% block columnHeaderBlock %}
-                                {% apply spaceless %}
-                                    <th>
-                                        {{- (column.label ?? key|humanize)|trans -}}
-                                        {% if column.sortable|default(false) %}
-                                            {% set sort_type = (((sort[0] == column) and sort[1]=='asc')?'desc':'asc') %}
-                                            <a href="{{ path(app.request.get('_route'), { sort: key, sort_type: sort_type }) }}">
-                                                {% if (sort[0] != key) %}
-                                                    <span class="fas fa-sort"></span>
-                                                {% else %}
-                                                    <span class="fas fa-sort-{{ (sort_type=='asc'?'up':'down') }}"></span>
-                                                {% endif %}
-                                            </a>
-                                        {% endif %}
-                                    </th>
-                                {% endapply %}
+                                <th>
+                                    {{- column.label|trans -}}
+
+                                    {% if column.sortable %}
+                                        {% set currentSortType = attribute(sort, column.field)|default(null) %}
+                                        {% set newSortType = (currentSortType == 'ASC' ? 'DESC' : 'ASC') %}
+
+                                        <a href="{{ generatePath('list', { sort: (sort|default({}))|merge({(column.field): (newSortType|default(null)) }) }) }}">
+                                            {% if (currentSortType) %}
+                                                {{ (currentSortType == 'ASC' ? '&uarr;':'&darr;') }}
+                                            {% else %}
+                                                &udarr;
+                                            {% endif %}
+                                        </a>
+                                    {% endif %}
+                                </th>
                             {% endblock %}
                         {% endfor %}
                         <th class="text-end">{{ 'Actions'|trans }}</th>
@@ -106,7 +109,8 @@
                             <tr id="row_{{ loop.index }}">
                                 {% if batchForm.method is defined %}
                                     <td>
-                                        <input type="checkbox" class="ids" name="batch[ids][]" value="{{ object.entity.id }}"/>
+                                        <input type="checkbox" class="ids" name="batch[ids][]"
+                                               value="{{ object.entity.id }}"/>
                                     </td>
                                 {% endif %}
                                 {% for column in object.data %}
