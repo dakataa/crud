@@ -9,7 +9,6 @@ use Traversable;
 class Paginator
 {
 	protected ORMPaginator $ormPaginator;
-
 	protected int $maxResults = 20;
 
 	public function __construct(protected QueryBuilder $query, protected int $page = 1) {

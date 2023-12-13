@@ -12,15 +12,12 @@ use Dakataa\Crud\Enum\SortTypeEnum;
 use Dakataa\Crud\Utils\Doctrine\Paginator;
 use DateTime;
 use DateTimeInterface;
-use Doctrine\Common\Collections\Criteria;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
-use Doctrine\ORM\Mapping\JoinColumn;
 use Doctrine\ORM\Query\Expr\Join;
 use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ObjectRepository;
 use Exception;
-use Generator;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Csv;
 use PhpOffice\PhpSpreadsheet\Writer\Html;
@@ -131,9 +128,9 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 		return new RedirectResponse($this->router->generate($route, $parameters, $status));
 	}
 
-	protected function prepareData(iterable $data, string $mode = null): Generator
+	protected function prepareData(Paginator $paginator, string $mode = null)
 	{
-		$compileData = function (array|object $entity) use ($mode) {
+		$compileEntityData = function (array|object $entity) use ($mode) {
 			$additionalEntityFields = [];
 
 			if (is_array($entity)) {
@@ -149,7 +146,7 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 				}
 			}
 
-			foreach ($this->getColumns(false, $mode) as $column) {
+			foreach ($this->getEntityColumns($mode) as $column) {
 				$field = $column->getAlias();
 
 				$value = null;
@@ -199,12 +196,16 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 			}
 		};
 
-		foreach ($data as $entity) {
-			yield [
+
+		['items' => $items, 'meta' => $meta] = $paginator->paginate();
+
+		return [
+			'items' => array_map(fn(array|object $entity) => [
 				'entity' => is_object($entity) ? $entity : $entity[0],
-				'data' => $compileData($entity),
-			];
-		}
+				'data' => $compileEntityData($entity),
+			], iterator_to_array($items)),
+			'meta' => $meta
+		];
 	}
 
 	/**
@@ -213,40 +214,29 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 	#[Route]
 	public function list(Request $request): Response
 	{
-		$this->setResultsLimit($request);
 
 		//Sort list by column
 		$sorting = $this->prepareSorting($request);
+		$query = $this
+			->getEntityRepository()
+			->createQueryBuilder('a');
 
-		$this->getFilters($request);
-
-		$resultsLimit = $this->getResultsLimit($request);
-		$query = $this->getEntityRepository()->createQueryBuilder('a');
 		$this
 			->buildQuery($request, $query)
 			->buildCustomQuery($request, $query);
 
-		$dataProvider = (new Paginator($query, $request->query->getInt('page', 1)))->setMaxResults($resultsLimit);
+		$dataProvider = (new Paginator($query, $request->query->getInt('page', 1)))
+			->setMaxResults($this->prepareResultsLimit($request));
 
 		return $this->response('list', [
-//			'title' => $this->getTitle(),
-
-			'dataProvider' => $dataProvider,
-			'results' => $this->prepareData($dataProvider->getResults()),
+			'dataProvider' => $this->prepareData($dataProvider),
 			'filterForm' => $this->getFilterForm($request)->createView(),
 			'batchForm' => $this->getBatchForm($request)->createView(),
-
-			'columns' => array_filter($this->getColumns(), fn(Column $column) => $column->getSearchable() !== false),
-//
-//			'objectColumns' => $this->getColumns(true),
-			'sort' => $sorting,
-
-//			'actions' => $this->getActions(),
-//			'objectActions' => $this->getObjectActions(),
-//			'batchActions' => $this->getBatchActions(),
-//			'modelName' => $this->getEntityShortName(),
-//			'entityClass' => $this->getEntity(),
-//			'controllerClass' => $this::class,
+			'columns' => array_filter(
+				$this->getEntityColumns(),
+				fn(Column $column) => $column->getSearchable() !== false
+			),
+			'sort' => $sorting
 		]);
 	}
 
@@ -556,7 +546,7 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 		}
 	}
 
-	public function getBatchForm(Request $request): FormInterface
+	protected function getBatchForm(Request $request): FormInterface
 	{
 		$form = $this
 			->formFactory
@@ -643,7 +633,7 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 	/**
 	 * @throws Exception
 	 */
-	private function getFilterForm(Request $request): FormInterface
+	protected function getFilterForm(Request $request): FormInterface
 	{
 		$form = $this->formFactory->createNamedBuilder(
 			'filter',
@@ -657,7 +647,7 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 			->setAction($this->router->generate($this->getRoute('filter')))
 			->setMethod('GET');
 
-		foreach ($this->getColumns() as $item => $column) {
+		foreach ($this->getEntityColumns() as $item => $column) {
 			$entityFieldMetadata = $this->getEntityFieldMetadata($item);
 
 			if ($column->getSearchable() === false) {
@@ -724,7 +714,7 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 
 	protected function prepareSorting(Request $request = null, bool $update = true): array
 	{
-		if($request->query->has('sort')) {
+		if ($request->query->has('sort')) {
 			$sorting = $request->query->all('sort', []);
 		} else {
 			$sorting = $request->getSession()->get($this->getAlias().'.sort', $this->getDefaultSort() ?: []);
@@ -773,82 +763,32 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 
 		$sort = array_filter($sort);
 
-		if($update && $request->query->has('sort')) {
+		if ($update && $request->query->has('sort')) {
 			$request->getSession()->set($this->getAlias().'.sort', $sort);
 		}
 
 		return $sort;
 	}
 
-	public function getResultsLimit(Request $request): int
-	{
-		return min(
-			100,
-			max(
-				self::DEFAULT_RESULTS_LIMIT,
-				intval($request->getSession()->get($this->getAlias().'.limit', self::DEFAULT_RESULTS_LIMIT))
-			)
-		);
-	}
-
-	public function setResultsLimit(Request $request): self
+	public function prepareResultsLimit(Request $request): int
 	{
 		if ($request->query->has('limit')) {
 			$limit = round(
 					($request->query->getInt('limit', self::DEFAULT_RESULTS_LIMIT)) / self::DEFAULT_RESULTS_LIMIT
 				) * self::DEFAULT_RESULTS_LIMIT;
+
 			$request->getSession()->set($this->getAlias().'.limit', min(100, max(self::DEFAULT_RESULTS_LIMIT, $limit)));
+		} else {
+			$limit = min(
+				100,
+				max(
+					self::DEFAULT_RESULTS_LIMIT,
+					intval($request->getSession()->get($this->getAlias().'.limit', self::DEFAULT_RESULTS_LIMIT))
+				)
+			);
 		}
 
-		return $this;
-	}
-
-	/**
-	 * @throws Exception
-	 */
-	protected function processSort(Request $request, QueryBuilder $query): void
-	{
-		foreach ($this->prepareSorting($request, false) as $sortField => $value) {
-			if (!is_string($value) || !SortTypeEnum::tryFrom($value)) {
-				continue;
-			}
-
-			if (str_contains($sortField, '.')) {
-				[$alias, $field] = explode('.', $sortField);
-
-				$joinColumn = array_filter(
-					$this->entity?->joins ?? [],
-					fn(EntityJoinColumn $c) => $c->alias === $alias
-				)[0] ?? null;
-
-				if (!$joinColumn) {
-					continue;
-				}
-
-				$joinColumnFQCN = $joinColumn->fqcn;
-				if (!class_exists($joinColumnFQCN)) {
-					if (!str_contains($joinColumnFQCN, '.')) {
-						continue;
-					}
-
-					$joinColumnFQCN = $this->entityManager->getClassMetadata(
-						$this->entity->fqcn
-					)->getAssociationTargetClass(explode('.', $joinColumn->fqcn)[1]);
-				}
-
-				if (!$this->entityManager->getClassMetadata($joinColumnFQCN)->hasField($field)) {
-					continue;
-				}
-			} else {
-				if (!$this->getEntityFieldMetadata($sortField)) {
-					continue;
-				}
-
-				$sortField = sprintf('%s.%s', self::ENTITY_TABLE_ALIAS, $sortField);
-			}
-
-			$query->addOrderBy($sortField, $value);
-		}
+		return $limit;
 	}
 
 	protected function getFilters(Request $request): array
@@ -898,9 +838,9 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 			}
 		}
 
-		$columns = $this->getColumns(false, $mode);
+		$columns = $this->getEntityColumns($mode);
 
-		foreach ($columns as $key => $column) {
+		foreach ($columns as $column) {
 			$fieldMetadata = $this->getEntityFieldMetadata(Container::camelize($column->getField()));
 			if ($fieldMetadata) {
 				$fieldName = self::ENTITY_TABLE_ALIAS.'.'.$fieldMetadata['fieldName'];
@@ -998,7 +938,47 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 			$counter++;
 		}
 
-		$this->processSort($request, $query);
+		foreach ($this->prepareSorting($request, false) as $sortField => $value) {
+			if (!is_string($value) || !SortTypeEnum::tryFrom($value)) {
+				continue;
+			}
+
+			if (str_contains($sortField, '.')) {
+				[$alias, $field] = explode('.', $sortField);
+
+				$joinColumn = array_filter(
+					$this->entity?->joins ?? [],
+					fn(EntityJoinColumn $c) => $c->alias === $alias
+				)[0] ?? null;
+
+				if (!$joinColumn) {
+					continue;
+				}
+
+				$joinColumnFQCN = $joinColumn->fqcn;
+				if (!class_exists($joinColumnFQCN)) {
+					if (!str_contains($joinColumnFQCN, '.')) {
+						continue;
+					}
+
+					$joinColumnFQCN = $this->entityManager->getClassMetadata(
+						$this->entity->fqcn
+					)->getAssociationTargetClass(explode('.', $joinColumn->fqcn)[1]);
+				}
+
+				if (!$this->entityManager->getClassMetadata($joinColumnFQCN)->hasField($field)) {
+					continue;
+				}
+			} else {
+				if (!$this->getEntityFieldMetadata($sortField)) {
+					continue;
+				}
+
+				$sortField = sprintf('%s.%s', self::ENTITY_TABLE_ALIAS, $sortField);
+			}
+
+			$query->addOrderBy($sortField, $value);
+		}
 
 		return $this;
 	}
@@ -1009,7 +989,7 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 	 * @throws Exception
 	 *
 	 */
-	public function getColumns(bool $all = false, string $mode = null): array
+	public function getEntityColumns(string $mode = null, bool $all = false): array
 	{
 		$fields = $this->entity->columns;
 
@@ -1039,14 +1019,6 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 		}
 
 		return $entityClassMetaData->getFieldMapping(lcfirst($field));
-	}
-
-	/**
-	 * @throws Exception
-	 */
-	protected function getTitle(): string
-	{
-		return $this->getEntityShortName();
 	}
 
 	protected function getExportFields(): array

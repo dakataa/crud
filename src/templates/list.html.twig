@@ -49,7 +49,7 @@
 
         {{ form_start(batchForm, { 'attr': {'novalidate': 'novalidate', 'autocomplete':'off'}}) }}
 
-        {% if results.current %}
+        {% if dataProvider.items|length %}
             {% if hasFilters %}
                 <div class="filters d-flex mb-sm overflow-auto">
                     {% macro filterList(filterForm) %}
@@ -104,8 +104,8 @@
                     </tr>
                     </thead>
                     <tbody>
-                    {% if results.current %}
-                        {% for object in results %}
+                    {% if dataProvider.items|length %}
+                        {% for object in dataProvider.items %}
                             <tr id="row_{{ loop.index }}">
                                 {% if batchForm.method is defined %}
                                     <td>
@@ -182,7 +182,7 @@
     </div>
     <script type="text/javascript">
 		let resultsLimit = document.querySelector('#results-limit');
-		resultsLimit.value = {{ dataProvider.maxResults }};
+		resultsLimit.value = {{ dataProvider.meta.totalResults }};
 		resultsLimit.addEventListener('change', function () {
 			let url = new URL(document.location.href);
 			url.searchParams.set('limit', resultsLimit.value);

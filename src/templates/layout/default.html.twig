@@ -40,7 +40,37 @@
     </div>
 </header>
 <main>
-    <!-- NAVIGATION -->
+    <div class="navigation d-print-none">
+        <nav id="nav">
+            {% macro list(items, route, parentId) %}
+                {% for item in items %}
+                    {% set hasItems = item.items is defined and item.items is not empty %}
+                    {% set navId = (parentId ? parentId ~ '-' : '') ~ loop.index %}
+                    <div class="item">
+                        <a {% if item.route is defined and item.route is not empty %}href="{{ path(item.route) }}"
+                           {% else %}data-bs-toggle="collapse" href="#subnav-{{ navId }}"{% endif %}>
+                            <span class="icon">
+                                <i class="fas {{ item.icon|default('fa-ellipsis') }}"></i>
+                            </span>
+                            <span class="title">
+                                {{ item.item.title|trans }}
+                            </span>
+                        </a>
+                        {% if hasItems %}
+                            <div class="collapse" id="subnav-{{ navId }}">
+                                {{ _self.list(item.items, null, navId) }}
+                            </div>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+            {% endmacro %}
+            {{ _self.list(getNavigation().items) }}
+
+{#            {{ dump(getNavigation().items) }}#}
+            <div class="mark">
+            </div>
+        </nav>
+    </div>
     <div class="content">
 {#        {% include "layout/component/breadcrumb.html.twig" %}#}
         {% if app.session.flashbag.has('notice') %}
