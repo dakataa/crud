@@ -1,0 +1,153 @@
+.uploader {
+  --photo-gap: #{map_get($spacers, sm)};
+
+  input {
+    display: none;
+  }
+
+  .dropzone {
+    border-block-width: 10px;
+
+    &.enter {
+      .add {
+        background: radial-gradient(circle 60px at var(--mouse-offset-x, 0) var(--mouse-offset-y, 0), $gray1 100%, $gray2 100%) !important;
+      }
+    }
+
+    .files {
+      display: flex;
+      flex-direction: column;
+      flex-wrap: wrap;
+
+      .photo,
+      .file,
+      .add {
+        border-radius: $border-radius;
+        background: $lighter;
+        margin-bottom: var(--photo-gap);
+      }
+
+      .file {
+        padding: 1rem;
+        min-height: 120px;
+        .name {
+          margin-left: .5rem;
+          word-wrap: break-word;
+        }
+      }
+
+      .add {
+        padding: map_get($spacers, md);
+        color: $black;
+
+        .browse {
+          text-decoration: underline;
+          cursor: pointer;
+        }
+      }
+
+      .photo {
+        flex-shrink: 0;
+        position: relative;
+        overflow: hidden;
+        margin-bottom: map_get($spacers, sm);
+
+        &.add {
+          background: white;
+          border: solid 2px $gray3;
+          cursor: pointer;
+
+          a {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: $black;
+            font-size: $font-size-xl;
+          }
+
+          &:hover {
+            background-color: $lighter;
+            border-color: $gray3;
+          }
+
+          &:active {
+            background-color: darken($lighter, 5%);
+          }
+        }
+
+        > img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          opacity: 0.5;
+          transition: opacity 0.3s ease;
+        }
+
+        > .icon {
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          font-size: $h2-font-size;
+          color: $gray4;
+        }
+
+        .progress {
+          position: absolute;
+          background: transparent;
+          border-radius: 0;
+          left: 0;
+          bottom: 0;
+          height: 100%;
+          transition: opacity 0.3s ease;
+
+          &:after {
+            content: attr(data-progress);
+            font-size: $h2-font-size;
+            color: white;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+          }
+        }
+
+        &.done,
+        &.fail {
+          img {
+            opacity: 1;
+          }
+
+          .progress {
+            opacity: 0;
+          }
+        }
+
+        &.fail {
+          border: solid 2px $red;
+        }
+      }
+    }
+
+    @include media-breakpoint-up(lg) {
+      .files {
+        flex-direction: row;
+        margin-left: calc(var(--photo-gap) * -1);
+
+        > * {
+          margin: 0 0 var(--photo-gap) var(--photo-gap);
+        }
+
+        .add {
+          width: 100%;
+          flex-grow: 1;
+        }
+
+        .photo, {
+          width: calc(25% - var(--photo-gap));
+        }
+      }
+    }
+  }
+}

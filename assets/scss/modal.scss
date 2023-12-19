@@ -1,0 +1,57 @@
+// Modal
+.modal-full {
+  max-width: 95% !important;
+}
+
+.modal {
+  @include media-breakpoint-down(md) {
+    .modal-dialog {
+      width: auto;
+      max-width: inherit;
+      margin: 0.5rem;
+    }
+  }
+
+  .modal-header {
+    display: flex;
+    flex-wrap: wrap;
+    justify-items: center;
+
+    .modal-title {
+      margin-right: 1rem;
+    }
+
+    .nav {
+      display: flex;
+      flex-wrap: nowrap;
+      justify-items: center;
+      max-width: 100%;
+      overflow: auto;
+
+      > a {
+        padding: .75rem;
+        position: relative;
+        white-space: nowrap;
+        color: $gray-700;
+        border-radius: $border-radius;
+        border-bottom: solid 2px transparent;
+
+        + a {
+          margin-left: .5rem;
+        }
+
+        &:hover,
+        &:focus,
+        &.active {
+          background: $lighter;
+        }
+
+        &.active {
+          border-color: $black;
+          border-bottom-left-radius: 0;
+          border-bottom-right-radius: 0;
+        }
+      }
+    }
+  }
+}

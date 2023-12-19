@@ -3,6 +3,13 @@ composer.lock
 phpunit.xml
 .idea/
 
-### Mac Hidden Files ###
+###> Mac Hidden Files ###
 .DS_Store
 **/.DS_Store
+###< Mac Hidden Files ###
+
+###> symfony/webpack-encore-bundle ###
+/node_modules/
+npm-debug.log
+yarn-error.log
+###< symfony/webpack-encore-bundle ###

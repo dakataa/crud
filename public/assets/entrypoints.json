@@ -1,0 +1,12 @@
+{
+  "entrypoints": {
+    "theme": {
+      "css": [
+        "/bundles/dakataacrud/assets/theme.22ea8f9f.css"
+      ],
+      "js": [
+        "/bundles/dakataacrud/assets/theme.63f495b9.js"
+      ]
+    }
+  }
+}

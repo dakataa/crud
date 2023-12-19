@@ -1,0 +1,94 @@
+@import "~bootstrap/scss/functions";
+@import "variables";
+@import "~bootstrap/scss/variables";
+@import "~bootstrap/scss/mixins";
+@import "~bootstrap/scss/carousel";
+
+.carousel {
+  display: block;
+}
+
+// Testimonials Styling
+.carousel-section {
+  overflow: hidden;
+
+  .lenno-quote-testemonials {
+    left: -55px;
+
+    @include media-breakpoint-down(md) {
+      left: 0;
+      top: -40px;
+    }
+  }
+
+  .carousel-indicators {
+    bottom: 0;
+
+    > li {
+      flex-shrink: 0;
+
+      &.active {
+        background-color: $pink;
+      }
+    }
+  }
+
+  .carousel-item {
+    .cite {
+      font-style: normal;
+    }
+  }
+
+  .quote-figure {
+    top: 10px;
+    right: 20px;
+    transform: rotate(-10deg);
+    animation: quote-animation 30s infinite linear;
+  }
+
+  // Adding fade Out-In to carousel
+  .carousel-item-next.carousel-item-left,
+  .carousel-item-prev.carousel-item-right {
+    opacity: 1;
+
+    @supports (transform-style: preserve-3d) {
+      opacity: 1;
+    }
+  }
+
+  .carousel-item-next,
+  .active.carousel-item-right {
+    opacity: 0;
+
+    @supports (transform-style: preserve-3d) {
+      opacity: 0;
+    }
+  }
+
+  .carousel-item-prev,
+  .active.carousel-item-left {
+    opacity: 0;
+
+    @supports (transform-style: preserve-3d) {
+      opacity: 0;
+    }
+  }
+
+  @include media-breakpoint-down(md) {
+    .carousel-item.active,
+    .carousel-item-next,
+    .carousel-item-prev {
+      @include transition($carousel-transition-sm);
+    }
+  }
+}
+
+// Screens Carousel
+.screens-carousel {
+  position: absolute;
+  width: 247px;
+  height: auto;
+  top: 72px;
+  left: 40px;
+  z-index: 1000;
+}

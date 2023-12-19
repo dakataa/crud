@@ -5,7 +5,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no"/>
     {% block stylesheets %}
-        {{ encore_entry_link_tags('backend') }}
+        {{ encore_entry_link_tags('theme', null, 'dakataa_crud') }}
     {% endblock %}
 </head>
 <body>
@@ -42,13 +42,13 @@
 <main>
     <div class="navigation d-print-none">
         <nav id="nav">
-            {% macro list(items, route, parentId) %}
+            {% macro list(items, parent) %}
                 {% for item in items %}
                     {% set hasItems = item.items is defined and item.items is not empty %}
-                    {% set navId = (parentId ? parentId ~ '-' : '') ~ loop.index %}
+                    {% set parent = (parent ? parent ~ '-' : '') ~ loop.index %}
                     <div class="item">
-                        <a {% if item.route is defined and item.route is not empty %}href="{{ path(item.route) }}"
-                           {% else %}data-bs-toggle="collapse" href="#subnav-{{ navId }}"{% endif %}>
+                        <a {% if item.item.controllerMethod is defined  %}href="{{ path(item.item.controllerFQCN ~ '::' ~ (item.item.controllerMethod|default('list'))) }}"
+                           {% else %}data-bs-toggle="collapse" href="#subnav-{{ parent }}"{% endif %}>
                             <span class="icon">
                                 <i class="fas {{ item.icon|default('fa-ellipsis') }}"></i>
                             </span>
@@ -57,16 +57,14 @@
                             </span>
                         </a>
                         {% if hasItems %}
-                            <div class="collapse" id="subnav-{{ navId }}">
-                                {{ _self.list(item.items, null, navId) }}
+                            <div class="collapse" id="subnav-{{ parent }}">
+                                {{ _self.list(item.items, parent) }}
                             </div>
                         {% endif %}
                     </div>
                 {% endfor %}
             {% endmacro %}
             {{ _self.list(getNavigation().items) }}
-
-{#            {{ dump(getNavigation().items) }}#}
             <div class="mark">
             </div>
         </nav>
