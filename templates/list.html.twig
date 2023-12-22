@@ -85,8 +85,8 @@
                                 <th>
                                     {{- column.label|trans -}}
 
-                                    {% if column.sortable %}
-                                        {% set currentSortType = attribute(sort, column.field)|default(null) %}
+                                    {% if column.sortable and attribute(sort, column.alias) is defined %}
+                                        {% set currentSortType = attribute(sort, column.alias)|default(null) %}
                                         {% set newSortType = (currentSortType == 'ASC' ? 'DESC' : 'ASC') %}
 
                                         <a href="{{ generatePath('list', { sort: (sort|default({}))|merge({(column.field): (newSortType|default(null)) }) }) }}">

@@ -12,8 +12,11 @@ use Dakataa\Crud\Enum\SortTypeEnum;
 use Dakataa\Crud\Utils\Doctrine\Paginator;
 use DateTime;
 use DateTimeInterface;
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Mapping\JoinColumn;
 use Doctrine\ORM\Query\Expr\Join;
 use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ObjectRepository;
@@ -27,8 +30,10 @@ use ReflectionAttribute;
 use ReflectionClass;
 use ReflectionException;
 use ReflectionMethod;
+use Closure;
 use Stringable;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Bundle\MakerBundle\Generator;
 use Symfony\Component\DependencyInjection\Container;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
@@ -56,7 +61,7 @@ use TypeError;
 
 abstract class AbstractCrudController extends AbstractController implements CrudControllerInterface
 {
-	const ENTITY_TABLE_ALIAS = 'a';
+	const ENTITY_ROOT_ALIAS = 'a';
 
 	const MODE_DISPLAY = 'display';
 	const MODE_EXPORT = 'export';
@@ -66,7 +71,7 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 	const EXPORT_CSV = 'csv';
 	const EXPORT_HTML = 'html';
 
-	const DEFAULT_RESULTS_LIMIT = 20;
+	const DEFAULT_RESULTS_LIMIT = 5;
 
 	protected ?Entity $entity = null;
 	protected ?EntityType $entityType = null;
@@ -169,8 +174,12 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 						}
 					}
 
-					if (is_callable($getter)) {
+					if (is_callable($getter) && $getter instanceof Closure) {
 						$value = $getter($value);
+					}
+
+					if ($value instanceof Collection) {
+						$value = implode(', ', $value->getValues());
 					}
 				}
 
@@ -204,7 +213,7 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 				'entity' => is_object($entity) ? $entity : $entity[0],
 				'data' => $compileEntityData($entity),
 			], iterator_to_array($items)),
-			'meta' => $meta
+			'meta' => $meta,
 		];
 	}
 
@@ -214,12 +223,11 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 	#[Route]
 	public function list(Request $request): Response
 	{
-
 		//Sort list by column
 		$sorting = $this->prepareSorting($request);
 		$query = $this
 			->getEntityRepository()
-			->createQueryBuilder('a');
+			->createQueryBuilder(self::ENTITY_ROOT_ALIAS);
 
 		$this
 			->buildQuery($request, $query)
@@ -236,7 +244,7 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 				$this->getEntityColumns(),
 				fn(Column $column) => $column->getSearchable() !== false
 			),
-			'sort' => $sorting
+			'sort' => $sorting,
 		]);
 	}
 
@@ -288,7 +296,6 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 			$header[] = $translator->trans($columnOption->getLabel());
 		}
 		$rows = [$header];
-
 
 		//Rows
 		foreach ($objects as $object) {
@@ -432,8 +439,8 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 
 			$queryBuilder = $this
 				->getEntityRepository()
-				->createQueryBuilder(self::ENTITY_TABLE_ALIAS)
-				->where(sprintf('%s.%s = :id', self::ENTITY_TABLE_ALIAS, $identifierColumn))
+				->createQueryBuilder(self::ENTITY_ROOT_ALIAS)
+				->where(sprintf('%s.%s = :id', self::ENTITY_ROOT_ALIAS, $identifierColumn))
 				->setParameter('id', $id);
 
 			$object = $queryBuilder->getQuery()->getOneOrNullResult();
@@ -647,18 +654,23 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 			->setAction($this->router->generate($this->getRoute('filter')))
 			->setMethod('GET');
 
-		foreach ($this->getEntityColumns() as $item => $column) {
-			$entityFieldMetadata = $this->getEntityFieldMetadata($item);
+		foreach ($this->buildColumns() as $columnData) {
+			[
+				'fqcn' => $fqcn,
+				'type' => $type,
+				'column' => $column,
+			] = $columnData;
 
 			if ($column->getSearchable() === false) {
 				continue;
 			}
 
+			$formFieldKey = $column->getAlias();
 			$columnOptions = [
 				'label' => $column->getLabel(),
 			];
 
-			$entityType = $entityFieldMetadata['type'] ?? TextType::class;
+			$entityType = $type ?? TextType::class;
 
 			if ($column->getSearchable() instanceof SearchableOptions) {
 				$columnOptions = [
@@ -676,16 +688,16 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 				case Types::STRING:
 				case Types::DECIMAL:
 				case Types::SMALLINT:
-					$form->add($item, TextType::class, $columnOptions);
+					$form->add($formFieldKey, TextType::class, $columnOptions);
 					break;
 				case Types::DATE_MUTABLE:
 				case Types::DATETIME_MUTABLE:
 					$defaultOptions = ['placeholder' => ''];
 					$columnOptions = array_merge($defaultOptions, $columnOptions);
-					$form->add($item, DateType::class, $columnOptions);
+					$form->add($formFieldKey, DateType::class, $columnOptions);
 					break;
 				case Types::BOOLEAN:
-					$form->add($item, CheckboxType::class, $columnOptions);
+					$form->add($formFieldKey, CheckboxType::class, $columnOptions);
 					break;
 				default:
 					if (empty($entityType) || !is_string($entityType)) {
@@ -693,7 +705,7 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 					}
 
 					$form->add(
-						$item,
+						$formFieldKey,
 						class_exists($entityType) && is_a(
 							$entityType,
 							FormTypeInterface::class,
@@ -720,54 +732,20 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 			$sorting = $request->getSession()->get($this->getAlias().'.sort', $this->getDefaultSort() ?: []);
 		}
 
-		$sort = [];
-		foreach ($sorting as $sortField => $sortType) {
-			if (!is_string($sortType) || !SortTypeEnum::tryFrom((string)$sortType)) {
-				$sortType = null;
-			}
+		$buildedColumns = array_reduce(
+			iterator_to_array($this->buildColumns()),
+			fn(array $c, array $item) => [...$c, $item['column']->getField() => $item],
+			[]
+		);
+		$sorting = array_intersect_key($sorting, $buildedColumns) + array_fill_keys(array_keys($buildedColumns), null);
 
-			if (str_contains($sortField, '.')) {
-				[$alias, $field] = explode('.', $sortField);
+		$request->getSession()->set($this->getAlias().'.sort', $sorting);
 
-				$joinColumn = array_filter(
-					$this->entity?->joins ?? [],
-					fn(EntityJoinColumn $c) => $c->alias === $alias
-				)[0] ?? null;
-
-				if (!$joinColumn) {
-					throw new BadRequestException(sprintf('Invalid Sorting Field %s', $sortField));
-				}
-
-				$joinColumnFQCN = $joinColumn->fqcn;
-				if (!class_exists($joinColumnFQCN)) {
-					if (!str_contains($joinColumnFQCN, '.')) {
-						throw new BadRequestException(sprintf('Invalid Sorting Field %s', $sortField));
-					}
-
-					$joinColumnFQCN = $this->entityManager->getClassMetadata(
-						$this->entity->fqcn
-					)->getAssociationTargetClass(explode('.', $joinColumn->fqcn)[1]);
-				}
-
-				if (!$this->entityManager->getClassMetadata($joinColumnFQCN)->hasField($field)) {
-					throw new BadRequestException(sprintf('Invalid Sorting Field %s', $sortField));
-				}
-			} else {
-				if (!$this->getEntityFieldMetadata($sortField)) {
-					throw new BadRequestException('Invalid Sorting Field');
-				}
-			}
-
-			$sort[$sortField] = $sortType;
-		}
-
-		$sort = array_filter($sort);
-
-		if ($update && $request->query->has('sort')) {
-			$request->getSession()->set($this->getAlias().'.sort', $sort);
-		}
-
-		return $sort;
+		return array_reduce(
+			array_keys($sorting),
+			fn(array $c, string $field) => [...$c, $buildedColumns[$field]['column']->getAlias() => $sorting[$field]],
+			[]
+		);
 	}
 
 	public function prepareResultsLimit(Request $request): int
@@ -814,6 +792,57 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 		return $this;
 	}
 
+	private function buildColumns(string $mode = null): \Generator
+	{
+		$compiledFields = [];
+		$rootEntityMetadata = $this->entityManager->getClassMetadata($this->getEntity()->getFqcn());
+		foreach ($this->getEntityColumns($mode) as $column) {
+			$entityMetadata = $rootEntityMetadata;
+			$fieldName = $column->getField();
+			$entityAlias = self::ENTITY_ROOT_ALIAS;
+			$assotiations = [];
+
+			if (str_contains($fieldName, '.')) {
+				$entityRelations = explode('.', $fieldName);
+				$fieldName = array_pop($entityRelations);
+
+				$entityAlias = null;
+				foreach ($entityRelations as $entityRelation) {
+					if (!$entityMetadata->hasAssociation($entityRelation)) {
+						continue 2;
+					}
+
+					$associationMapping = $entityMetadata->getAssociationMapping($entityRelation);
+
+					$rootAlias = $entityAlias;
+					$entityAlias = $entityAlias.Container::camelize($entityRelation);
+
+					$assotiations[] = [
+						'entity' => lcfirst($rootAlias ?: self::ENTITY_ROOT_ALIAS),
+						'field' => $entityRelation,
+						'alias' => lcfirst($entityAlias),
+					];
+
+					$entityMetadata = $this->entityManager->getClassMetadata($associationMapping['targetEntity']);
+				}
+			} else {
+				if (!$entityMetadata->hasField($fieldName)) {
+					continue;
+				}
+			}
+
+
+			yield [
+				'fqcn' => $entityMetadata->getReflectionClass()->name,
+				'entityAlias' => lcfirst($entityAlias),
+				'entityField' => $fieldName,
+				'assotiations' => $assotiations,
+				'type' => $entityMetadata->getTypeOfField($fieldName),
+				'column' => $column,
+			];
+		}
+	}
+
 	/**
 	 * @throws Exception
 	 */
@@ -834,149 +863,92 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 
 		if ($entity->group) {
 			foreach ($entity->group ?? [] as $group) {
-				$query->groupBy($group->field);
+				$groupByField = (str_contains($group->field, '.') ? $group->field : sprintf(
+					'%s.%s',
+					self::ENTITY_ROOT_ALIAS,
+					$group->field
+				));
+
+				$query->groupBy($groupByField);
 			}
 		}
 
-		$columns = $this->getEntityColumns($mode);
+		$filters = array_filter($this->getFilters($request), fn(mixed $value) => ($value !== null && $value !== ''));
 
-		foreach ($columns as $column) {
-			$fieldMetadata = $this->getEntityFieldMetadata(Container::camelize($column->getField()));
-			if ($fieldMetadata) {
-				$fieldName = self::ENTITY_TABLE_ALIAS.'.'.$fieldMetadata['fieldName'];
-			} else {
-				$fieldName = $column->getField();
-				if (!str_contains($fieldName, '.')) {
-					continue;
-				}
+		foreach ($this->buildColumns($mode) as $columnData) {
+			[
+				'entityAlias' => $entityAlias,
+				'entityField' => $entityField,
+				'assotiations' => $assotiations,
+				'type' => $type,
+				'column' => $column,
+			] = $columnData;
 
-				[$alias, $field] = explode('.', $fieldName);
-				$joinColumn = array_filter($entity->joins, fn(EntityJoinColumn $c) => $c->alias == $alias)[0] ?? null;
-				if (!$joinColumn) {
-					continue;
-				}
+			foreach ($assotiations as $assotiation) {
+				$query->innerJoin($assotiation['entity'].'.'.$assotiation['field'], $assotiation['alias']);
 			}
 
-			$query
-				->addSelect(
-					sprintf(
-						'%s as %s',
-						$fieldName,
-						$column->getAlias()
-					)
-				);
-		}
+			$query->addSelect(
+				sprintf(
+					'%s.%s as %s',
+					$entityAlias,
+					$entityField,
+					$column->getAlias()
+				)
+			);
 
-		//Filter
-		$counter = 1;
-		foreach ($this->getFilters($request) as $filter => $value) {
-			if ($value === null || $value === '') {
-				continue;
-			}
+			if (isset($filters[$column->getAlias()]) && $column->getSearchable()) {
+				$value = $filters[$column->getAlias()];
+				$type = ($column->getSearchable() instanceof SearchableOptions ? $column->getSearchable()->getType(
+				) : null) ?? $type ?? Types::STRING;
+				$parameter = sprintf('p%s', $column->getAlias());
 
-			$modelColumn = $this->getEntityFieldMetadata($filter);
-			$column = $columns[$filter] ?? null;
-
-			if ($column === null || ($modelColumn === null && !$column->getSearchable())) {
-				continue;
-			}
-
-			$modelColumn = $this->getEntityFieldMetadata($filter);
-			$type = ($column->getSearchable() instanceof SearchableOptions ? $column->getSearchable()->getType(
-			) : null) ?? Types::STRING;
-			$parameter = sprintf('p%d', $counter);
-
-			if (is_array($type)) {
-				$type = array_pop($type);
-			}
-
-			$filterField = $modelColumn['field'] ?? (str_contains($column->getField(), '.') ? $column->getField(
-			) : sprintf('%s.%s', self::ENTITY_TABLE_ALIAS, $column->getField()));
-
-			switch ($type) {
-				case Types::TEXT:
-				case Types::STRING:
-				case Types::SIMPLE_ARRAY:
-				{
-					$query
-						->andWhere(
-							sprintf(
-								'%s LIKE :%s',
-								$filterField,
-								$parameter
+				switch ($type) {
+					case Types::TEXT:
+					case Types::STRING:
+					case Types::SIMPLE_ARRAY:
+					{
+						$query
+							->andWhere(
+								sprintf(
+									'%s.%s LIKE :%s',
+									$entityAlias,
+									$entityField,
+									$parameter
+								)
 							)
-						)
-						->setParameter($parameter, sprintf('%%%s%%', addcslashes($value, '\\')));
-					break;
-				}
-				case Types::DATE_MUTABLE:
-				case Types::DATETIME_MUTABLE:
-				{
-					/** @var DateTime $value */
-					if ($value instanceof DateTime) {
-						$value = $value->format('Y-m-d');
+							->setParameter($parameter, sprintf('%%%s%%', addcslashes($value, '\\')));
+						break;
 					}
-					$query->andWhere(
-						sprintf(
-							'DATE(%s) = \'%s\'',
-							$filterField,
-							$value
-						)
-					);
-					break;
-				}
-				case Types::BOOLEAN:
-				default:
-				{
-					$query
-						->andWhere(sprintf("%s = :%s", $filterField, $parameter))
-						->setParameter($parameter, $value);
-					break;
+					case Types::DATE_MUTABLE:
+					case Types::DATETIME_MUTABLE:
+					{
+						/** @var DateTime $value */
+						if ($value instanceof DateTime) {
+							$value = $value->format('Y-m-d');
+						}
+						$query->andWhere(
+							sprintf(
+								'DATE(%s) = \'%s\'',
+								$filterField,
+								$value
+							)
+						);
+						break;
+					}
+					case Types::BOOLEAN:
+					default:
+					{
+						$query
+							->andWhere(sprintf("%s.%s = :%s", $entityAlias, $entityField, $parameter))
+							->setParameter($parameter, $value);
+						break;
+					}
 				}
 			}
-
-			$counter++;
 		}
 
 		foreach ($this->prepareSorting($request, false) as $sortField => $value) {
-			if (!is_string($value) || !SortTypeEnum::tryFrom($value)) {
-				continue;
-			}
-
-			if (str_contains($sortField, '.')) {
-				[$alias, $field] = explode('.', $sortField);
-
-				$joinColumn = array_filter(
-					$this->entity?->joins ?? [],
-					fn(EntityJoinColumn $c) => $c->alias === $alias
-				)[0] ?? null;
-
-				if (!$joinColumn) {
-					continue;
-				}
-
-				$joinColumnFQCN = $joinColumn->fqcn;
-				if (!class_exists($joinColumnFQCN)) {
-					if (!str_contains($joinColumnFQCN, '.')) {
-						continue;
-					}
-
-					$joinColumnFQCN = $this->entityManager->getClassMetadata(
-						$this->entity->fqcn
-					)->getAssociationTargetClass(explode('.', $joinColumn->fqcn)[1]);
-				}
-
-				if (!$this->entityManager->getClassMetadata($joinColumnFQCN)->hasField($field)) {
-					continue;
-				}
-			} else {
-				if (!$this->getEntityFieldMetadata($sortField)) {
-					continue;
-				}
-
-				$sortField = sprintf('%s.%s', self::ENTITY_TABLE_ALIAS, $sortField);
-			}
-
 			$query->addOrderBy($sortField, $value);
 		}
 
