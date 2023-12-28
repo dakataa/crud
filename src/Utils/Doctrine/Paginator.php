@@ -13,16 +13,17 @@ class Paginator
 
 	public function __construct(protected QueryBuilder $query, protected int $page = 1) {
 		$this->ormPaginator = new ORMPaginator($query);
-		$this->setPage($this->page);
+
 	}
 
 	public function setMaxResults(int $maxResults): static
 	{
 		$this->maxResults = $maxResults;
-
 		$this->ormPaginator
 			->getQuery()
 			->setMaxResults($maxResults);
+		
+		$this->setPage($this->page);
 
 		return $this;
 	}
@@ -34,7 +35,7 @@ class Paginator
 
 	public function setPage(int $page = 1): self
 	{
-		$this->page = 1;
+		$this->page = $page;
 		$this->ormPaginator
 			->getQuery()
 			->setFirstResult($this->getOffset())// Offset
@@ -85,7 +86,8 @@ class Paginator
 				'page' => $this->getPage(),
 				'totalPages' => $this->getTotalPages(),
 				'totalResults' => $this->count(),
-				'links' => $this->getPage()
+				'links' => $this->getLinks(),
+				'maxResults' => $this->getMaxResults()
 			]
 		];
 	}

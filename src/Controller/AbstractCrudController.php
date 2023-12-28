@@ -238,7 +238,7 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 
 		return $this->response('list', [
 			'dataProvider' => $this->prepareData($dataProvider),
-			'filterForm' => $this->getFilterForm($request)->createView(),
+			'filterForm' => $this->getFilterForm($request)->submit($this->getFilters($request))->createView(),
 			'batchForm' => $this->getBatchForm($request)->createView(),
 			'columns' => array_filter(
 				$this->getEntityColumns(),
@@ -628,11 +628,12 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 	#[Route(path: '/filter')]
 	public function filter(Request $request): Response
 	{
+		$filterData = $request->get('filter', []);
 		$form = $this
 			->getFilterForm($request)
-			->submit($request->get('filter', []));
+			->submit($filterData);
 
-		$this->setFilters($request, $form->isValid() ? $form->getData() : []);
+		$this->setFilters($request, $form->isValid() ? $filterData : []);
 
 		return new RedirectResponse($this->router->generate($this->getRoute('list')));
 	}
@@ -645,14 +646,14 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 		$form = $this->formFactory->createNamedBuilder(
 			'filter',
 			FormType::class,
-			$this->getFilters($request),
+			null,
 			[
 				...($this->parameterBag->get('form.type_extension.csrf.enabled') ? ['csrf_protection' => false] : []),
 			]
 		);
 		$form
 			->setAction($this->router->generate($this->getRoute('filter')))
-			->setMethod('GET');
+			->setMethod(Request::METHOD_GET);
 
 		foreach ($this->buildColumns() as $columnData) {
 			[
@@ -692,9 +693,7 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 					break;
 				case Types::DATE_MUTABLE:
 				case Types::DATETIME_MUTABLE:
-					$defaultOptions = ['placeholder' => ''];
-					$columnOptions = array_merge($defaultOptions, $columnOptions);
-					$form->add($formFieldKey, DateType::class, $columnOptions);
+					$form->add($formFieldKey, DateType::class, array_merge(['placeholder' => ''], $columnOptions));
 					break;
 				case Types::BOOLEAN:
 					$form->add($formFieldKey, CheckboxType::class, $columnOptions);
@@ -733,7 +732,7 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 		}
 
 		$buildedColumns = array_reduce(
-			iterator_to_array($this->buildColumns()),
+			array_filter(iterator_to_array($this->buildColumns()), fn(array $c) => $c['column']->getSortable() !== false),
 			fn(array $c, array $item) => [...$c, $item['column']->getField() => $item],
 			[]
 		);
@@ -794,11 +793,10 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 
 	private function buildColumns(string $mode = null): \Generator
 	{
-		$compiledFields = [];
+
 		$rootEntityMetadata = $this->entityManager->getClassMetadata($this->getEntity()->getFqcn());
-		foreach ($this->getEntityColumns($mode) as $column) {
+		$buildColumn = function (string $fieldName, Column $column) use ($rootEntityMetadata): array|false {
 			$entityMetadata = $rootEntityMetadata;
-			$fieldName = $column->getField();
 			$entityAlias = self::ENTITY_ROOT_ALIAS;
 			$assotiations = [];
 
@@ -809,14 +807,13 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 				$entityAlias = null;
 				foreach ($entityRelations as $entityRelation) {
 					if (!$entityMetadata->hasAssociation($entityRelation)) {
-						continue 2;
+						return false;
 					}
 
 					$associationMapping = $entityMetadata->getAssociationMapping($entityRelation);
 
 					$rootAlias = $entityAlias;
 					$entityAlias = $entityAlias.Container::camelize($entityRelation);
-
 					$assotiations[] = [
 						'entity' => lcfirst($rootAlias ?: self::ENTITY_ROOT_ALIAS),
 						'field' => $entityRelation,
@@ -827,19 +824,31 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 				}
 			} else {
 				if (!$entityMetadata->hasField($fieldName)) {
-					continue;
+					return false;
 				}
 			}
 
-
-			yield [
+			return [
 				'fqcn' => $entityMetadata->getReflectionClass()->name,
 				'entityAlias' => lcfirst($entityAlias),
 				'entityField' => $fieldName,
 				'assotiations' => $assotiations,
 				'type' => $entityMetadata->getTypeOfField($fieldName),
 				'column' => $column,
+				'canSelect' => $entityMetadata->hasField($fieldName) && false === $entityMetadata->hasAssociation($fieldName)
 			];
+		};
+
+		foreach ($this->getEntityColumns($mode) as $column) {
+			if(false !== $columnData = $buildColumn($column->getField(), $column)) {
+				yield $columnData;
+			}
+
+			if((($searchableField = $column->getSearchable()) instanceof SearchableOptions) ) {
+				if($searchableField->getField() && false !== $columnData = $buildColumn($searchableField->getField(), new Column($searchableField->getField(), searchable: $searchableField, sortable: false))) {
+					yield $columnData;
+				}
+			}
 		}
 	}
 
@@ -882,22 +891,29 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 				'assotiations' => $assotiations,
 				'type' => $type,
 				'column' => $column,
+				'canSelect' => $canSelect
 			] = $columnData;
 
-			foreach ($assotiations as $assotiation) {
-				$query->innerJoin($assotiation['entity'].'.'.$assotiation['field'], $assotiation['alias']);
+			$hasFilterApplied = isset($filters[$column->getAlias()]) && false !== $column->getSearchable();
+
+			if($canSelect || $hasFilterApplied) {
+				foreach ($assotiations as $assotiation) {
+					$query->innerJoin($assotiation['entity'].'.'.$assotiation['field'], $assotiation['alias']);
+				}
 			}
 
-			$query->addSelect(
-				sprintf(
-					'%s.%s as %s',
-					$entityAlias,
-					$entityField,
-					$column->getAlias()
-				)
-			);
+			if($canSelect) {
+				$query->addSelect(
+					sprintf(
+						'%s.%s as %s',
+						$entityAlias,
+						$entityField,
+						$column->getAlias()
+					)
+				);
+			}
 
-			if (isset($filters[$column->getAlias()]) && $column->getSearchable()) {
+			if ($hasFilterApplied) {
 				$value = $filters[$column->getAlias()];
 				$type = ($column->getSearchable() instanceof SearchableOptions ? $column->getSearchable()->getType(
 				) : null) ?? $type ?? Types::STRING;
@@ -940,7 +956,7 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 					default:
 					{
 						$query
-							->andWhere(sprintf("%s.%s = :%s", $entityAlias, $entityField, $parameter))
+							->andWhere(sprintf("%s.%s IN (:%s)", $entityAlias, $entityField, $parameter))
 							->setParameter($parameter, $value);
 						break;
 					}
@@ -948,7 +964,7 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 			}
 		}
 
-		foreach ($this->prepareSorting($request, false) as $sortField => $value) {
+		foreach (array_filter($this->prepareSorting($request, false)) as $sortField => $value) {
 			$query->addOrderBy($sortField, $value);
 		}
 

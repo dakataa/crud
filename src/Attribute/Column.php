@@ -18,7 +18,7 @@ class Column
 		protected ?array $enum = null,
 		protected bool $raw = false,
 		protected int|float|string|Stringable|null $value = null,
-		protected SearchableOptions|bool $searchable = true,
+		protected SearchableOptions|bool|null $searchable = null,
 		protected bool|SortTypeEnum $sortable = true,
 		protected array $options = [],
 		protected mixed $roles = null
@@ -43,9 +43,8 @@ class Column
 
 	public function getLabel(): ?string
 	{
-		return $this->label ?: ucfirst(
-			str_replace('_', ' ', Container::underscore($this->field))
-		);
+		$label = explode('.', $this->label ?: $this->field);
+		return ucfirst(array_pop($label));
 	}
 
 	public function setLabel(?string $label): Column
@@ -115,7 +114,7 @@ class Column
 		return $this;
 	}
 
-	public function getSearchable(): SearchableOptions|bool
+	public function getSearchable(): SearchableOptions|bool|null
 	{
 		return $this->searchable;
 	}

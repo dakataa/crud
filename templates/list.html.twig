@@ -61,7 +61,7 @@
                                     {% set filterVars = filterForm.vars.data|filter((fv,fk) => fk != v.vars.name) %}
                                     <small class="mb-2">{{ (v.vars.label ?? v.vars.name)|capitalize|trans }}</small>
                                     <div class="btn btn-sm btn-primary me-1 mb-1">
-                                        {{ v.vars.choices is defined ? (v.vars.choices|filter(c => c.value == v.vars.value)|first).label ?? v.vars.value : (v.vars.value is iterable ? '' : v.vars.value) }}
+                                        {{ v.vars.choices is defined ? (v.vars.choices|filter(c => c.value == v.vars.value)|first).label ?? (v.vars.data is iterable ? v.vars.data|join(', ') : v.vars.value) : (v.vars.value is iterable ? '' : v.vars.value) }}
                                         <a href="{{ generatePath('filter', { filter: filterVars }) }}"
                                            class="text-white">&times;</a>
                                     </div>
@@ -84,12 +84,10 @@
                             {% block columnHeaderBlock %}
                                 <th>
                                     {{- column.label|trans -}}
-
                                     {% if column.sortable and attribute(sort, column.alias) is defined %}
                                         {% set currentSortType = attribute(sort, column.alias)|default(null) %}
-                                        {% set newSortType = (currentSortType == 'ASC' ? 'DESC' : 'ASC') %}
-
-                                        <a href="{{ generatePath('list', { sort: (sort|default({}))|merge({(column.field): (newSortType|default(null)) }) }) }}">
+                                        {% set nextSortType = (currentSortType ? (currentSortType == 'ASC' ? 'DESC' : null) : 'ASC') %}
+                                        <a href="{{ generatePath('list', { sort: (sort|default({}))|merge({(column.field): (nextSortType|default('')) }) }) }}">
                                             {% if (currentSortType) %}
                                                 {{ (currentSortType == 'ASC' ? '&uarr;':'&darr;') }}
                                             {% else %}
@@ -175,14 +173,14 @@
         </div>
 
         <div class="d-flex justify-content-center">
-            {% include '@DakataaCrud/paginator.html.twig' with { dataProvider: dataProvider, route: getRoute('index')} %}
+            {% include '@DakataaCrud/paginator.html.twig' with { dataProvider: dataProvider, route: getRoute('list')} %}
         </div>
 
         {{ form_end(batchForm, {'render_rest': false}) }}
     </div>
     <script type="text/javascript">
 		let resultsLimit = document.querySelector('#results-limit');
-		resultsLimit.value = {{ dataProvider.meta.totalResults }};
+		resultsLimit.value = {{ dataProvider.meta.maxResults }};
 		resultsLimit.addEventListener('change', function () {
 			let url = new URL(document.location.href);
 			url.searchParams.set('limit', resultsLimit.value);
