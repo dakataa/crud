@@ -7,7 +7,7 @@ use Dakataa\Crud\Enum\SortTypeEnum;
 use Stringable;
 use Symfony\Component\DependencyInjection\Container;
 
-#[Attribute(Attribute::TARGET_CLASS | Attribute::IS_REPEATABLE)]
+#[Attribute(Attribute::TARGET_CLASS | Attribute::TARGET_METHOD | Attribute::IS_REPEATABLE)]
 class Column
 {
 	public function __construct(

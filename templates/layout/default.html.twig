@@ -40,6 +40,7 @@
     </div>
 </header>
 <main>
+    {% if getNavigation().hasNavigation %}
     <div class="navigation d-print-none">
         <nav id="nav">
             {% macro list(items, parent) %}
@@ -50,7 +51,7 @@
                         <a {% if item.item.controllerMethod is defined  %}href="{{ path(item.item.controllerFQCN ~ '::' ~ (item.item.controllerMethod|default('list'))) }}"
                            {% else %}data-bs-toggle="collapse" href="#subnav-{{ parent }}"{% endif %}>
                             <span class="icon">
-                                <i class="fas {{ item.icon|default('fa-ellipsis') }}"></i>
+                                <!-- icon here !-->
                             </span>
                             <span class="title">
                                 {{ item.item.title|trans }}
@@ -69,6 +70,7 @@
             </div>
         </nav>
     </div>
+    {% endif %}
     <div class="content">
 {#        {% include "layout/component/breadcrumb.html.twig" %}#}
         {% if app.session.flashbag.has('notice') %}

@@ -2,21 +2,20 @@
 
 namespace Dakataa\Crud\Controller;
 
+use Closure;
+use Dakataa\Crud\Attribute\Action;
 use Dakataa\Crud\Attribute\Column;
 use Dakataa\Crud\Attribute\Entity;
 use Dakataa\Crud\Attribute\EntityGroup;
 use Dakataa\Crud\Attribute\EntityJoinColumn;
 use Dakataa\Crud\Attribute\EntityType;
 use Dakataa\Crud\Attribute\SearchableOptions;
-use Dakataa\Crud\Enum\SortTypeEnum;
 use Dakataa\Crud\Utils\Doctrine\Paginator;
 use DateTime;
 use DateTimeInterface;
-use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
-use Doctrine\ORM\Mapping\JoinColumn;
 use Doctrine\ORM\Query\Expr\Join;
 use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ObjectRepository;
@@ -30,10 +29,8 @@ use ReflectionAttribute;
 use ReflectionClass;
 use ReflectionException;
 use ReflectionMethod;
-use Closure;
 use Stringable;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
-use Symfony\Bundle\MakerBundle\Generator;
 use Symfony\Component\DependencyInjection\Container;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
@@ -46,7 +43,6 @@ use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\Form\FormFactoryInterface;
 use Symfony\Component\Form\FormInterface;
 use Symfony\Component\Form\FormTypeInterface;
-use Symfony\Component\HttpFoundation\Exception\BadRequestException;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -76,13 +72,13 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 	protected ?Entity $entity = null;
 	protected ?EntityType $entityType = null;
 
-	private function getAttributes(string $attributeClass): array
+	protected function getAttributes(string $attributeClass): array
 	{
 		return array_map(fn(ReflectionAttribute $attribute) => $attribute->newInstance(),
 			(new ReflectionClass($this))->getAttributes($attributeClass));
 	}
 
-	private function getAttribute(string $attributeClass): mixed
+	protected function getAttribute(string $attributeClass): mixed
 	{
 		return ($this->getAttributes($attributeClass)[0] ?? null);
 	}
@@ -114,7 +110,9 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 	public function getEntity(): Entity
 	{
 		if (!$this->entity) {
-			throw new Exception('Invalid Entity. Add PHP Attribute or extend getEntity method.');
+			throw new Exception(
+				'Invalid CRUD Entity Class. Add PHP Attribute "Dakataa\Crud\Attribute\Entity" or extend getEntity method.'
+			);
 		}
 
 		return $this->entity;
@@ -221,9 +219,9 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 	 * @throws Exception
 	 */
 	#[Route]
+	#[Action]
 	public function list(Request $request): Response
 	{
-		//Sort list by column
 		$sorting = $this->prepareSorting($request);
 		$query = $this
 			->getEntityRepository()
@@ -384,35 +382,10 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 	 * @throws Exception
 	 */
 	#[Route(path: '/add')]
+	#[Action]
 	public function add(Request $request): ?Response
 	{
 		return $this->edit($request);
-	}
-
-	/**
-	 * @throws Exception
-	 */
-	protected function response(string $action, array $parameters = []): Response
-	{
-		$controllerPatterns = '#Controller\\\(?<class>.+)Controller$#';
-		preg_match($controllerPatterns, static::class, $matches);
-
-		if (empty($matches['class'])) {
-			throw new Exception('Invalid Controller Class.');
-		}
-
-		$path = rtrim(
-			Container::underscore(str_replace('\\', '/', preg_replace('/Action$/i', '', $matches['class']))),
-			'/'
-		);
-
-		$templatePath = sprintf('%s/%s.html.twig', $path, $action);
-
-		if (!$this->twig->getLoader()->exists($templatePath)) {
-			$templatePath = sprintf('@DakataaCrud/%s.html.twig', $action);
-		}
-
-		return $this->render($templatePath, $parameters);
 	}
 
 	/**
@@ -421,6 +394,7 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 	 * @throws Exception
 	 */
 	#[Route(path: '/{id}/edit', requirements: ['id' => '\d+'])]
+	#[Action]
 	public function edit(Request $request, int $id = null): ?Response
 	{
 		if (empty($this->getEntityType())) {
@@ -502,6 +476,7 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 	}
 
 	#[Route(path: '/{id}/delete', requirements: ['id' => '\d+'])]
+	#[Action]
 	public function delete(Request $request, int $id): Response
 	{
 		$object = $this->getEntityRepository()->find($id);
@@ -512,11 +487,11 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 		return new RedirectResponse($this->router->generate($this->getRoute('list'), $request->query->all()));
 	}
 
-
 	/**
 	 * @throws Exception
 	 */
 	#[Route(path: '/batch')]
+	#[Action]
 	public function batch(Request $request): Response
 	{
 		$form = $this->getBatchForm($request);
@@ -553,6 +528,45 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 		}
 	}
 
+	protected function getControllerClass(): string
+	{
+		return static::class;
+	}
+
+	protected function getTemplateDirectoryByClass(string $controllerClass): string
+	{
+		$controllerPatterns = '#Controller\\\(?<class>.+)Controller$#';
+		preg_match($controllerPatterns, $controllerClass, $matches);
+
+		if (empty($matches['class'])) {
+			throw new Exception('Invalid Controller Class.');
+		}
+
+		return rtrim(
+			Container::underscore(str_replace('\\', '/', preg_replace('/Action$/i', '', $matches['class']))),
+			'/'
+		);
+	}
+
+	protected function getTemplate(string $action): string
+	{
+		$templatePath = sprintf('%s/%s.html.twig', $this->getTemplateDirectoryByClass($this->getControllerClass()), $action);
+
+		if (!$this->twig->getLoader()->exists($templatePath)) {
+			$templatePath = sprintf('@DakataaCrud/%s.html.twig', $action);
+		}
+
+		return $templatePath;
+	}
+
+	/**
+	 * @throws Exception
+	 */
+	protected function response(string $action, array $parameters = []): Response
+	{
+		return new Response($this->twig->render($this->getTemplate($action), $parameters));
+	}
+
 	protected function getBatchForm(Request $request): FormInterface
 	{
 		$form = $this
@@ -560,7 +574,7 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 			->createNamedBuilder('batch', options: [
 				...($this->parameterBag->get('form.type_extension.csrf.enabled') ? ['csrf_protection' => false] : []),
 			])
-			->setAction($this->router->generate($this->getRoute('batch')))
+//			->setAction($this->router->generate($this->getRoute('batch')))
 			->setMethod('POST');
 
 		$form
@@ -573,7 +587,7 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 			]);
 
 
-		$classInstance = new ReflectionClass(static::class);
+		$classInstance = new ReflectionClass($this->getControllerClass());
 		$methods = [];
 		foreach (
 			$classInstance->getMethods(
@@ -651,8 +665,9 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 				...($this->parameterBag->get('form.type_extension.csrf.enabled') ? ['csrf_protection' => false] : []),
 			]
 		);
+
 		$form
-			->setAction($this->router->generate($this->getRoute('filter')))
+//			->setAction($this->router->generate($this->getRoute('filter')))
 			->setMethod(Request::METHOD_GET);
 
 		foreach ($this->buildColumns() as $columnData) {
@@ -732,7 +747,8 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 		}
 
 		$buildedColumns = array_reduce(
-			array_filter(iterator_to_array($this->buildColumns()), fn(array $c) => $c['column']->getSortable() !== false),
+			array_filter(iterator_to_array($this->buildColumns()), fn(array $c) => $c['column']->getSortable() !== false
+			),
 			fn(array $c, array $item) => [...$c, $item['column']->getField() => $item],
 			[]
 		);
@@ -793,7 +809,6 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 
 	private function buildColumns(string $mode = null): \Generator
 	{
-
 		$rootEntityMetadata = $this->entityManager->getClassMetadata($this->getEntity()->getFqcn());
 		$buildColumn = function (string $fieldName, Column $column) use ($rootEntityMetadata): array|false {
 			$entityMetadata = $rootEntityMetadata;
@@ -835,17 +850,22 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 				'assotiations' => $assotiations,
 				'type' => $entityMetadata->getTypeOfField($fieldName),
 				'column' => $column,
-				'canSelect' => $entityMetadata->hasField($fieldName) && false === $entityMetadata->hasAssociation($fieldName)
+				'canSelect' => $entityMetadata->hasField($fieldName) && false === $entityMetadata->hasAssociation(
+						$fieldName
+					),
 			];
 		};
 
 		foreach ($this->getEntityColumns($mode) as $column) {
-			if(false !== $columnData = $buildColumn($column->getField(), $column)) {
+			if (false !== $columnData = $buildColumn($column->getField(), $column)) {
 				yield $columnData;
 			}
 
-			if((($searchableField = $column->getSearchable()) instanceof SearchableOptions) ) {
-				if($searchableField->getField() && false !== $columnData = $buildColumn($searchableField->getField(), new Column($searchableField->getField(), searchable: $searchableField, sortable: false))) {
+			if ((($searchableField = $column->getSearchable()) instanceof SearchableOptions)) {
+				if ($searchableField->getField() && false !== $columnData = $buildColumn(
+						$searchableField->getField(),
+						new Column($searchableField->getField(), searchable: $searchableField, sortable: false)
+					)) {
 					yield $columnData;
 				}
 			}
@@ -891,18 +911,18 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 				'assotiations' => $assotiations,
 				'type' => $type,
 				'column' => $column,
-				'canSelect' => $canSelect
+				'canSelect' => $canSelect,
 			] = $columnData;
 
 			$hasFilterApplied = isset($filters[$column->getAlias()]) && false !== $column->getSearchable();
 
-			if($canSelect || $hasFilterApplied) {
+			if ($canSelect || $hasFilterApplied) {
 				foreach ($assotiations as $assotiation) {
 					$query->innerJoin($assotiation['entity'].'.'.$assotiation['field'], $assotiation['alias']);
 				}
 			}
 
-			if($canSelect) {
+			if ($canSelect) {
 				$query->addSelect(
 					sprintf(
 						'%s.%s as %s',
@@ -945,8 +965,9 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 						}
 						$query->andWhere(
 							sprintf(
-								'DATE(%s) = \'%s\'',
-								$filterField,
+								'DATE(%s.%s) = \'%s\'',
+								$entityAlias,
+								$entityField,
 								$value
 							)
 						);
@@ -1033,8 +1054,7 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 
 	public function getAlias(): string
 	{
-		$controller_class = static::class;
-		$split = explode('\\', $controller_class);
+		$split = explode('\\', $this->getControllerClass());
 		$controller_name = strtolower(str_replace('Controller', '', end($split)));
 
 		return Container::underscore($controller_name);
@@ -1061,8 +1081,28 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 		return $this->entityManager->getRepository($this->getEntity()->getFqcn());
 	}
 
+
+	protected function getMappedRoutes(): array
+	{
+		return [];
+	}
+
+	protected function hasRoute(string $method): bool
+	{
+		return method_exists($this, $method);
+	}
+
 	protected function getRoute(string $method = null): string
 	{
+		$mappedRoute = $this->getMappedRoutes()[$method] ?? null;
+		if (null !== $mappedRoute) {
+			return $mappedRoute;
+		}
+
+		if (method_exists($this, $method)) {
+			throw new NotFoundHttpException(sprintf('Missing Route "%s"', $method));
+		}
+
 		return $this::class.'::'.$method;
 	}
 }

@@ -1,28 +1,57 @@
 {% extends [getParameter('layout')|default(''), '@DakataaCrud/layout/default.html.twig'] %}
-
 {% block title %}{{ (title ?? 'List')|trans }}{% endblock %}
-{% set hasFilters = filterForm.vars.data|length %}
+{% macro displayFormFieldValue(formField) %}
+    {% if formField.vars.choices is defined %}
+        {% set values = formField.vars.value is iterable ? formField.vars.value : [formField.vars.value] %}
+        {% set labels = formField.vars.choices|filter(c => c.value in values)|map(v => v.label) %}
+        {{ labels|join(',') }}
+    {% elseif(formField.vars.checked is defined) %}
+        Checked
+    {% else %}
+        {{ formField.vars.data }}
+    {% endif %}
+{% endmacro %}
+{% macro filterList(filterForm) %}
+    {% for formField in filterForm.children|filter(formField => formField.vars.data is not empty) %}
+        {% if formField.children|length %}
+            {{ _self.filterList(formField) }}
+        {% else %}
+            <div class="filters-item d-flex text-nowrap flex-column me-2 mb-2">
+                {% set filterVars = filterForm.vars.data|filter((fv,fk) => fk != formField.vars.name and fv is not empty) %}
+                <small class="mb-2">{{ (formField.vars.label ?? formField.vars.name)|capitalize|trans }}</small>
+                <div class="btn btn-sm btn-primary me-1 mb-1">
+                    {{ _self.displayFormFieldValue(formField) }}
+                    <a href="{{ generatePath('filter', { filter: filterVars }) }}" class="text-white">
+                        &times;
+                    </a>
+                </div>
+            </div>
+        {% endif %}
+    {% endfor %}
+{% endmacro %}
+
+
+{% set hasFilters = filterForm.vars.data|filter(v => v)|length %}
 {% block body %}
     <div class="list">
         <div class="content-header d-md-flex mb-3 justify-content-between align-items-center">
-            {% block list_title %}
-                {% apply spaceless %}
-                    <h2>
-                        {{ block('title') }}
-                    </h2>
-                {% endapply %}
-            {% endblock %}
+            <h2>
+                {% block list_title %}
+                    {{ block('title') }}
+                {% endblock %}
+            </h2>
             <div class="btn-group btn-group-sm">
                 {% block actions %}
+                    {% if hasAction('add') %}
                     <a href="{{ generatePath('add') }}" class="btn btn-success">
                         <i class="fas fa-plus"></i> {{ 'Add'|trans }}
                     </a>
+                    {% endif %}
                 {% endblock %}
                 {% if filterForm %}
                     <div class="btn-group btn-group-sm">
-                        <button type="button" class="btn btn-outline-secondary dropdown-toggle"
-                                data-bs-toggle="dropdown">
-                            {{ 'Filter'|trans }} <span class="caret"></span>
+                        <button type="button" class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+                            {{ 'Filter'|trans }}
                         </button>
 
                         <div class="dropdown-menu dropdown-menu-right" aria-label="menu">
@@ -42,6 +71,7 @@
                     </div>
                 {% endif %}
                 {% if hasFilters %}
+                    {{ dump(hasFilters) }}
                     <a href="{{ generatePath('filter', { _reset: 1 }) }}" class="btn btn-outline-dark">x</a>
                 {% endif %}
             </div>
@@ -49,35 +79,20 @@
 
         {{ form_start(batchForm, { 'attr': {'novalidate': 'novalidate', 'autocomplete':'off'}}) }}
 
+        {% if hasFilters %}
+            <div class="filters d-flex mb-sm overflow-auto">
+                {{ _self.filterList(filterForm) }}
+            </div>
+        {% endif %}
         {% if dataProvider.items|length %}
-            {% if hasFilters %}
-                <div class="filters d-flex mb-sm overflow-auto">
-                    {% macro filterList(filterForm) %}
-                        {% for v in filterForm.children|filter(f => f.vars.value is not empty) %}
-                            {% if v.children|length %}
-                                {{ _self.filterList(v) }}
-                            {% else %}
-                                <div class="filters-item d-flex text-nowrap flex-column me-2 mb-2">
-                                    {% set filterVars = filterForm.vars.data|filter((fv,fk) => fk != v.vars.name) %}
-                                    <small class="mb-2">{{ (v.vars.label ?? v.vars.name)|capitalize|trans }}</small>
-                                    <div class="btn btn-sm btn-primary me-1 mb-1">
-                                        {{ v.vars.choices is defined ? (v.vars.choices|filter(c => c.value == v.vars.value)|first).label ?? (v.vars.data is iterable ? v.vars.data|join(', ') : v.vars.value) : (v.vars.value is iterable ? '' : v.vars.value) }}
-                                        <a href="{{ generatePath('filter', { filter: filterVars }) }}"
-                                           class="text-white">&times;</a>
-                                    </div>
-                                </div>
-                            {% endif %}
-                        {% endfor %}
-                    {% endmacro %}
-                    {{ _self.filterList(filterForm) }}
-                </div>
-            {% endif %}
             <div class="table-responsive">
                 <table class="table table-striped table-hover table-bordered">
                     <thead>
                     <tr>
                         {% if batchForm.method is defined %}
-                            <th width="1%"><input type="checkbox" data-toggle="checkall" data-target=".ids"/></th>
+                            <th width="1%">
+                                <input type="checkbox" data-toggle="checkall" data-target=".ids"/>
+                            </th>
                         {% endif %}
                         {% for column in columns|filter((options, column) => (rolesForClass(column.permission|default('')) is empty or (rolesForClass(column.permission|default('index'))|reduce((a, b) => (a == null or a == true ? is_granted(b) : false), null)) or (is_granted('ROLE_SUPER_ADMIN') == true))) %}
                             {% set columnHeaderBlock = column.alias ~ '_header' %}
@@ -127,17 +142,21 @@
                                     {% endif %}
                                 {% endfor %}
                                 <td class="text-end">
+                                    {% if hasAction('edit') %}
                                     <a href="{{ generatePath('edit', {id: entityPrimaryKey(object.entity)}) }}"
                                        class="btn btn-sm btn-outline-primary">
                                         <i class="fas fa-trash"></i>
                                         Edit
                                     </a>
+                                    {% endif %}
+                                    {% if hasAction('delete') %}
                                     <a onclick="return confirm('Are you sure?')"
                                        href="{{ generatePath('delete', {id: entityPrimaryKey(object.entity)}) }}"
                                        class="btn btn-sm btn-outline-danger">
                                         <i class="fas fa-trash"></i>
                                         Remove
                                     </a>
+                                    {% endif %}
                                 </td>
                             </tr>
                         {% endfor %}

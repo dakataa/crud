@@ -2,6 +2,7 @@
 
 namespace Dakataa\Crud;
 
+use Dakataa\Crud\EventSubscriber\CrudSubscriber;
 use ReflectionClass;
 use Dakataa\Crud\Attribute\Navigation\NavigationGroup;
 use Dakataa\Crud\Attribute\Navigation\NavigationItem;
@@ -13,6 +14,7 @@ use Symfony\Component\Config\Definition\Configurator\DefinitionConfigurator;
 use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
+use Symfony\Component\Form\FormFactoryInterface;
 use Symfony\Component\HttpKernel\Bundle\AbstractBundle;
 use Symfony\Component\HttpKernel\Bundle\Bundle;
 
@@ -49,6 +51,14 @@ class DakataaCrudBundle extends AbstractBundle
 			->set(Navigation::class, Navigation::class)
 			->autowire(true)
 			->autoconfigure(true);
+
+		$container
+			->services()
+			->set(CrudSubscriber::class, CrudSubscriber::class)
+			->tag('controller.service_arguments')
+			->autowire(true)
+			->autoconfigure(true)
+		;
 
 		$container->parameters()->set(self::NAME, $config);
 

@@ -5,7 +5,7 @@ namespace Dakataa\Crud\Attribute;
 use Attribute;
 use Doctrine\ORM\Mapping\JoinColumn;
 
-#[Attribute(Attribute::TARGET_CLASS)]
+#[Attribute(Attribute::TARGET_CLASS | Attribute::TARGET_METHOD)]
 class Entity
 {
 	/**

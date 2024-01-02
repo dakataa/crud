@@ -60,4 +60,8 @@ class Navigation
 
 		return $getItems($this->items);
 	}
+
+	public function hasNavigation(): bool {
+		return !empty($this->getItems());
+	}
 }

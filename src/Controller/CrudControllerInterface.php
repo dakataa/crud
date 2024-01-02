@@ -7,8 +7,6 @@ use Dakataa\Crud\Attribute\EntityType;
 
 interface CrudControllerInterface
 {
-	const COLUMNS_LIST = 'list';
-	const COLUMNS_VIEW = 'view';
 
 	public function getEntity(): Entity;
 
