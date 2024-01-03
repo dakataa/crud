@@ -24,6 +24,6 @@
     "phpoffice/phpspreadsheet": "^1.29",
     "twig/twig": "^3.8",
     "symfony/framework-bundle": "^6.4",
-    "symfony/security-bundle": "^7.0"
+    "symfony/security-bundle": "^6.4"
   }
 }
