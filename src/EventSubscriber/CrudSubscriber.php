@@ -93,7 +93,7 @@ class CrudSubscriber
 
 			public function getMappedRoutes(): array
 			{
-				return $this->crudSubscriber->getMapActionToRoute($this->getControllerClass(), $this->getEntity());
+				return $this->crudSubscriber->getMapActionToRoute($this->getControllerClass(), $this->getEntity()?->fqcn);
 			}
 		};
 
