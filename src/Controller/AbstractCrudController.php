@@ -432,7 +432,7 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 				'data-submit' => 'true',
 			],
 		];
-		$formOptions = array_merge_recursive($formOptions, $this->getEntityType()->getOptions());
+		$formOptions = array_merge_recursive($formOptions, $this->getEntityType()->getOptions() ?: []);
 		//PERMISSION
 		if (empty($object)) {
 			$entityClass = $this->getEntity()->getFqcn();

@@ -4,6 +4,7 @@ namespace Dakataa\Crud\EventSubscriber;
 
 
 use Dakataa\Crud\Attribute\Action;
+use Dakataa\Crud\Attribute\Entity;
 use Dakataa\Crud\Controller\AbstractCrudController;
 use Doctrine\ORM\EntityManagerInterface;
 use ReflectionAttribute;
@@ -87,23 +88,12 @@ class CrudSubscriber
 
 			protected function getAttributes(string $attributeClass): array
 			{
-				// Get Method Attributes
-				$attributes = array_map(
-					fn(ReflectionAttribute $reflectionAttribute) => $reflectionAttribute->newInstance(),
-					$this->controllerEvent->getControllerReflector()->getAttributes($attributeClass)
-				);
-
-				if (!empty($attributes)) {
-					return $attributes;
-				}
-
-				// Return Class Attributes if Method Attributes not exists
-				return array_reverse($this->controllerEvent->getAttributes($attributeClass));
+				return $this->crudSubscriber->getAttributes($this->controllerEvent, $attributeClass);
 			}
 
 			public function getMappedRoutes(): array
 			{
-				return $this->crudSubscriber->getMapActionToRoute($this->getControllerClass());
+				return $this->crudSubscriber->getMapActionToRoute($this->getControllerClass(), $this->getEntity());
 			}
 		};
 
@@ -126,16 +116,33 @@ class CrudSubscriber
 			}
 		}
 
+		$event->getRequest()->attributes->set('_entityFQCN', ($this->getAttributes($event, Entity::class)[0]?? null)?->fqcn);
 		$event->setController([$controller, $action->action]);
 	}
 
-	public function getMapActionToRoute(string $class): array
+	public function getAttributes(ControllerEvent $controllerEvent, string $attributeClass): array
 	{
-		$reflectionClass = new ReflectionClass($class);
+		// Get Method Attributes
+		$attributes = array_map(
+			fn(ReflectionAttribute $reflectionAttribute) => $reflectionAttribute->newInstance(),
+			$controllerEvent->getControllerReflector()->getAttributes($attributeClass)
+		);
+
+		if (!empty($attributes)) {
+			return $attributes;
+		}
+
+		// Return Class Attributes if Method Attributes not exists
+		return array_reverse($controllerEvent->getAttributes($attributeClass));
+	}
+
+	public function getMapActionToRoute(string $controllerFQCN, string $entityFQCN = null): array
+	{
+		$reflectionClass = new ReflectionClass($controllerFQCN);
 
 		return array_reduce(
 			$reflectionClass->getMethods(),
-			function (array $result, ReflectionMethod $reflectionMethod) use ($reflectionClass) {
+			function (array $result, ReflectionMethod $reflectionMethod) use ($reflectionClass, $entityFQCN) {
 				$actionAttributes = $reflectionMethod->getAttributes(Action::class);
 				if (empty($actionAttributes)) {
 					return $result;
@@ -148,18 +155,36 @@ class CrudSubscriber
 						array_map(
 							function (ReflectionAttribute $reflectionAttribute) use (
 								$reflectionClass,
-								$reflectionMethod
+								$reflectionMethod,
+								$entityFQCN
 							) {
 								/** @var Route|null $routeAttribute */
-								$routeAttribute = ($reflectionMethod->getAttributes(
-									Route::class
-								)[0] ?? null)?->newInstance();
+								$routeAttribute = ($reflectionMethod->getAttributes(Route::class)[0] ?? null)?->newInstance();
 
 								/** @var IsGranted[] $isGrantedAttributes */
 								$isGrantedAttributes = array_map(
 									fn(ReflectionAttribute $refAttribute) => $refAttribute->newInstance(),
 									$reflectionMethod->getAttributes(IsGranted::class)
 								);
+
+								if($entityFQCN) {
+									/** @var string[] $entityAttributesFQCN */
+									$entityAttributesFQCN = array_map(
+										fn(ReflectionAttribute $refAttribute) => $refAttribute->newInstance()->fqcn,
+										$reflectionMethod->getAttributes(Entity::class)
+									);
+
+									if(empty($entityAttributesFQCN)) {
+										$entityAttributesFQCN = array_map(
+											fn(ReflectionAttribute $refAttribute) => $refAttribute->newInstance()->fqcn,
+											$reflectionClass->getAttributes(Entity::class)
+										);
+									}
+
+									if (empty($entityAttributesFQCN) || !in_array($entityFQCN, $entityAttributesFQCN)) {
+										return null;
+									}
+								}
 
 								foreach ($isGrantedAttributes as $isGrantedAttribute) {
 									if (!$this->authorizationChecker->isGranted($isGrantedAttribute->attribute)) {

@@ -66,7 +66,7 @@ class CrudExtension extends AbstractExtension
 		$class = $isClassPassed ? $arguments[0] : $this->getControllerClass();
 		$method = ($isClassPassed ? $arguments[1] : $arguments[0]);
 
-		$mappedRoutes = $this->crudSubscriber->getMapActionToRoute($class);
+		$mappedRoutes = $this->crudSubscriber->getMapActionToRoute($class, $this->getEntityFQCN());
 
 		return isset($mappedRoutes[$method]);
 	}
@@ -89,6 +89,11 @@ class CrudExtension extends AbstractExtension
 	public function getControllerClass(): string
 	{
 		return explode('::', $this->requestStack->getMainRequest()->attributes->get('_controller'))[0];
+	}
+
+	public function getEntityFQCN(): ?string
+	{
+		return $this->requestStack->getMainRequest()->attributes->get('_entityFQCN');
 	}
 
 	public function getParameter(string $key): mixed
