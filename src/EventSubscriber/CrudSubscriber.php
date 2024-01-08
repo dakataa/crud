@@ -5,6 +5,7 @@ namespace Dakataa\Crud\EventSubscriber;
 
 use Dakataa\Crud\Attribute\Action;
 use Dakataa\Crud\Attribute\Entity;
+use Dakataa\Crud\Attribute\EntityType;
 use Dakataa\Crud\Controller\AbstractCrudController;
 use Doctrine\ORM\EntityManagerInterface;
 use ReflectionAttribute;
@@ -153,7 +154,7 @@ class CrudSubscriber
 					...
 					array_filter(
 						array_map(
-							function (ReflectionAttribute $reflectionAttribute) use (
+							function (ReflectionAttribute $actionRefAttribute) use (
 								$reflectionClass,
 								$reflectionMethod,
 								$entityFQCN
@@ -192,10 +193,22 @@ class CrudSubscriber
 									}
 								}
 
+								$action = ($actionRefAttribute->newInstance()->action ?: $reflectionMethod->name);
+								$route = $routeAttribute?->getName() ?: ($reflectionClass->name.'::'.$reflectionMethod->name);
+
+								switch ($action) {
+									case 'add':
+									case 'edit':
+									{
+										if(empty($reflectionMethod->getAttributes(EntityType::class)) && empty($reflectionClass->getAttributes(EntityType::class))) {
+											return null;
+										}
+										break;
+									}
+								}
+
 								return [
-									($reflectionAttribute->newInstance(
-									)->action ?: $reflectionMethod->name) => $routeAttribute?->getName(
-									) ?: ($reflectionClass->name.'::'.$reflectionMethod->name),
+									$action => $route,
 								];
 							},
 							$actionAttributes

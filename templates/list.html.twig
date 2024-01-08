@@ -17,11 +17,11 @@
             {{ _self.filterList(formField) }}
         {% else %}
             <div class="filters-item d-flex text-nowrap flex-column me-2 mb-2">
-                {% set filterVars = filterForm.vars.data|filter((fv,fk) => fk != formField.vars.name and fv is not empty) %}
+                {% set filterVars = filterForm.vars.data|default([])|filter((fv,fk) => fk != formField.vars.name and fv is not empty) %}
                 <small class="mb-2">{{ (formField.vars.label ?? formField.vars.name)|capitalize|trans }}</small>
                 <div class="btn btn-sm btn-primary me-1 mb-1">
                     {{ _self.displayFormFieldValue(formField) }}
-                    <a href="{{ generatePath('filter', { filter: filterVars }) }}" class="text-white">
+                    <a href="{{ generatePath('list', { filter: filterVars ?: '' }) }}" class="text-white">
                         &times;
                     </a>
                 </div>
@@ -31,7 +31,7 @@
 {% endmacro %}
 
 
-{% set hasFilters = filterForm.vars.data|filter(v => v)|length %}
+{% set hasFilters = filterForm.vars.data|default([])|filter(v => v)|length %}
 {% block body %}
     <div class="list">
         <div class="content-header d-md-flex mb-3 justify-content-between align-items-center">
@@ -62,7 +62,7 @@
                                     <button type="submit" class="btn btn-success me-2">{{ 'Search'|trans }}</button>
                                     {% if hasFilters %}
                                         <a class="btn btn-default"
-                                           href="{{ generatePath('filter', { _reset: 1 }) }}">{{ 'Reset'|trans }}</a>
+                                           href="{{ generatePath('list', { _reset: 1 }) }}">{{ 'Reset'|trans }}</a>
                                     {% endif %}
                                 </div>
                                 {{ form_end(filterForm) }}
@@ -71,8 +71,7 @@
                     </div>
                 {% endif %}
                 {% if hasFilters %}
-                    {{ dump(hasFilters) }}
-                    <a href="{{ generatePath('filter', { _reset: 1 }) }}" class="btn btn-outline-dark">x</a>
+                    <a href="{{ generatePath('list', { _reset: 1 }) }}" class="btn btn-outline-dark">x</a>
                 {% endif %}
             </div>
         </div>

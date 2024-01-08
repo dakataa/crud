@@ -18,6 +18,7 @@ use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Query\Expr\Join;
 use Doctrine\ORM\QueryBuilder;
+use Doctrine\Persistence\Mapping\ClassMetadata;
 use Doctrine\Persistence\ObjectRepository;
 use Exception;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -40,6 +41,7 @@ use Symfony\Component\Form\Extension\Core\Type\CollectionType;
 use Symfony\Component\Form\Extension\Core\Type\DateType;
 use Symfony\Component\Form\Extension\Core\Type\FormType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
+use Symfony\Component\Form\Form;
 use Symfony\Component\Form\FormFactoryInterface;
 use Symfony\Component\Form\FormInterface;
 use Symfony\Component\Form\FormTypeInterface;
@@ -71,6 +73,7 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 
 	protected ?Entity $entity = null;
 	protected ?EntityType $entityType = null;
+	protected ?ClassMetadata $entityClassMetadata = null;
 
 	protected function getAttributes(string $attributeClass): array
 	{
@@ -218,10 +221,24 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 	/**
 	 * @throws Exception
 	 */
-	#[Route]
-	#[Action]
+	#[
+		Route,
+		Action
+	]
 	public function list(Request $request): Response
 	{
+		$batchForm = $this->handleBatch($request);
+		if($batchForm instanceof Response) {
+			return $batchForm;
+		}
+
+		$filterData = $request->get('filter', $this->getFilters($request));
+		$filterForm = $this
+			->getFilterForm($request)
+			->submit($filterData);
+
+		$this->setFilters($request, $filterForm->isValid() ? $filterData : []);
+
 		$sorting = $this->prepareSorting($request);
 		$query = $this
 			->getEntityRepository()
@@ -234,9 +251,11 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 		$dataProvider = (new Paginator($query, $request->query->getInt('page', 1)))
 			->setMaxResults($this->prepareResultsLimit($request));
 
+		$request->attributes->set('_entityFQCN', $this->entity->fqcn);
+
 		return $this->response('list', [
 			'dataProvider' => $this->prepareData($dataProvider),
-			'filterForm' => $this->getFilterForm($request)->submit($this->getFilters($request))->createView(),
+			'filterForm' => $filterForm->createView(),
 			'batchForm' => $this->getBatchForm($request)->createView(),
 			'columns' => array_filter(
 				$this->getEntityColumns(),
@@ -389,7 +408,6 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 	}
 
 	/**
-	 *
 	 * @param int|null $id
 	 * @throws Exception
 	 */
@@ -402,23 +420,19 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 		}
 
 		$object = null;
+		$entityClassIdentifierFieldName = $this->getEntityClassMetadata()->getSingleIdentifierFieldName();
 		if ($id) {
-			$metadata = $this->entityManager->getClassMetadata($this->getEntity()->getFqcn());
-
-			if (count($metadata->getIdentifierFieldNames()) > 1) {
+			if (count($this->getEntityClassMetadata()->getIdentifierFieldNames()) > 1) {
 				throw new Exception('Entity with two or more identifier columns are not supported.');
 			}
-
-			$identifierColumn = $metadata->getSingleIdentifierFieldName();
 
 			$queryBuilder = $this
 				->getEntityRepository()
 				->createQueryBuilder(self::ENTITY_ROOT_ALIAS)
-				->where(sprintf('%s.%s = :id', self::ENTITY_ROOT_ALIAS, $identifierColumn))
+				->where(sprintf('%s.%s = :id', self::ENTITY_ROOT_ALIAS, $entityClassIdentifierFieldName))
 				->setParameter('id', $id);
 
 			$object = $queryBuilder->getQuery()->getOneOrNullResult();
-
 			if (empty($object)) {
 				throw new NotFoundHttpException('Not Found');
 			}
@@ -463,7 +477,7 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 				return new RedirectResponse(
 					$this->router->generate(
 						$this->getRoute('edit'),
-						['id' => method_exists($object, 'getId') ? $object->getId() : null]
+						['id' => $this->getEntityClassMetadata()->getIdentifierValues($object)[$entityClassIdentifierFieldName] ?? null]
 					)
 				);
 			}
@@ -487,12 +501,7 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 		return new RedirectResponse($this->router->generate($this->getRoute('list'), $request->query->all()));
 	}
 
-	/**
-	 * @throws Exception
-	 */
-	#[Route(path: '/batch')]
-	#[Action]
-	public function batch(Request $request): Response
+	protected function handleBatch(Request $request): Response|Form
 	{
 		$form = $this->getBatchForm($request);
 		if ($request->isMethod(Request::METHOD_POST)) {
@@ -504,7 +513,7 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 					throw new Exception(sprintf('Method %s not exists', $method));
 				}
 
-				$objects = $this->getEntityRepository()->findBy(['id' => $form->get('ids')->getData()]);
+				$objects = $this->getEntityRepository()->findBy([$this->getEntityClassMetadata()->getSingleIdentifierFieldName() => $form->get('ids')->getData()]);
 				if ($response = $this->$method($request, $objects)) {
 					if ($response instanceof Response) {
 						return $response;
@@ -513,7 +522,7 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 			}
 		}
 
-		return new RedirectResponse($this->router->generate($this->getRoute('list'), $request->query->all()));
+		return $form;
 	}
 
 	protected function batchDelete(Request $request, array $objects): void
@@ -550,7 +559,11 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 
 	protected function getTemplate(string $action): string
 	{
-		$templatePath = sprintf('%s/%s.html.twig', $this->getTemplateDirectoryByClass($this->getControllerClass()), $action);
+		$templatePath = sprintf(
+			'%s/%s.html.twig',
+			$this->getTemplateDirectoryByClass($this->getControllerClass()),
+			$action
+		);
 
 		if (!$this->twig->getLoader()->exists($templatePath)) {
 			$templatePath = sprintf('@DakataaCrud/%s.html.twig', $action);
@@ -634,22 +647,6 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 		}
 
 		return $form->getForm();
-	}
-
-	/**
-	 * @throws Exception
-	 */
-	#[Route(path: '/filter')]
-	public function filter(Request $request): Response
-	{
-		$filterData = $request->get('filter', []);
-		$form = $this
-			->getFilterForm($request)
-			->submit($filterData);
-
-		$this->setFilters($request, $form->isValid() ? $filterData : []);
-
-		return new RedirectResponse($this->router->generate($this->getRoute('list')));
 	}
 
 	/**
@@ -1015,19 +1012,26 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 		return $fields;
 	}
 
+	public function getEntityClassMetadata(): ClassMetadata
+	{
+		if(!$this->entityClassMetadata) {
+			$this->entityClassMetadata = $this->entityManager->getClassMetadata($this->getEntity()->getFqcn());
+		}
+
+		return $this->entityClassMetadata;
+	}
+
 	/**
 	 * @param $field
 	 * @throws Exception
 	 */
 	public function getEntityFieldMetadata(string $field): ?array
 	{
-		$entityClassMetaData = $this->entityManager->getClassMetadata($this->getEntity()->getFqcn());
-
-		if (!$entityClassMetaData->hasField(lcfirst($field))) {
+		if (!$this->getEntityClassMetadata()->hasField(lcfirst($field))) {
 			return null;
 		}
 
-		return $entityClassMetaData->getFieldMapping(lcfirst($field));
+		return $this->getEntityClassMetadata()->getFieldMapping(lcfirst($field));
 	}
 
 	protected function getExportFields(): array
@@ -1099,7 +1103,7 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 			return $mappedRoute;
 		}
 
-		if (method_exists($this, $method)) {
+		if (!method_exists($this, $method)) {
 			throw new NotFoundHttpException(sprintf('Missing Route "%s"', $method));
 		}
 
