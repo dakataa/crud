@@ -118,6 +118,8 @@ class CrudSubscriber
 		}
 
 		$event->getRequest()->attributes->set('_entityFQCN', ($this->getAttributes($event, Entity::class)[0]?? null)?->fqcn);
+		$event->getRequest()->attributes->set('action', $action);
+
 		$event->setController([$controller, $action->action]);
 	}
 

@@ -3,6 +3,8 @@
 namespace Dakataa\Crud\Controller;
 
 use Closure;
+use Dakataa\Crud\Attribute\Enum\EntityColumnViewTypeEnum;
+use Generator;
 use Dakataa\Crud\Attribute\Action;
 use Dakataa\Crud\Attribute\Column;
 use Dakataa\Crud\Attribute\Entity;
@@ -60,9 +62,6 @@ use TypeError;
 abstract class AbstractCrudController extends AbstractController implements CrudControllerInterface
 {
 	const ENTITY_ROOT_ALIAS = 'a';
-
-	const MODE_DISPLAY = 'display';
-	const MODE_EXPORT = 'export';
 
 	const EXPORT_EXCEL = 'excel';
 	const EXPORT_EXCEL2007 = 'excel2007';
@@ -134,85 +133,84 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 		return new RedirectResponse($this->router->generate($route, $parameters, $status));
 	}
 
-	protected function prepareData(Paginator $paginator, string $mode = null)
+	protected function compileEntityData(array|object $entity, EntityColumnViewTypeEnum $viewType = null): Generator
 	{
-		$compileEntityData = function (array|object $entity) use ($mode) {
-			$additionalEntityFields = [];
+		$additionalEntityFields = [];
+		if (is_array($entity)) {
+			if ($entity[0]::class === $this->getEntity()->getFqcn()) {
+				$additionalEntityFields = array_filter(
+					$entity,
+					fn(mixed $key) => !is_numeric($key),
+					ARRAY_FILTER_USE_KEY
+				);
+				$entity = $entity[0];
+			} else {
+				throw new Exception('Invalid results.');
+			}
+		}
 
-			if (is_array($entity)) {
-				if ($entity[0]::class === $this->getEntity()->getFqcn()) {
-					$additionalEntityFields = array_filter(
-						$entity,
-						fn(mixed $key) => !is_numeric($key),
-						ARRAY_FILTER_USE_KEY
-					);
-					$entity = $entity[0];
-				} else {
-					throw new Exception('Invalid results.');
+		foreach ($this->getEntityColumns($viewType) as $column) {
+			$field = $column->getAlias();
+
+			$value = null;
+			foreach (['get', 'has', 'is'] as $methodPrefix) {
+				$method = Container::camelize(sprintf('%s%s', $methodPrefix, Container::underscore($field)));
+
+				if (method_exists($entity, $method)) {
+					$value = $entity->$method();
+					break;
 				}
 			}
 
-			foreach ($this->getEntityColumns($mode) as $column) {
-				$field = $column->getAlias();
+			if ($getter = $column->getGetter()) {
+				if (is_string($getter)) {
+					$getter = sprintf('get%s', (preg_replace('/^get/i', '', Container::camelize($getter))));
 
-				$value = null;
-				foreach (['get', 'has', 'is'] as $methodPrefix) {
-					$method = sprintf('%s%s', $methodPrefix, Container::underscore($field));
-					$method = Container::camelize($method);
-
-					if (method_exists($entity, $method)) {
-						$value = $entity->$method();
-						break;
+					if (method_exists($entity, $getter)) {
+						$value = $entity->$getter();
 					}
 				}
 
-				if ($getter = $column->getGetter()) {
-					if (is_string($getter)) {
-						$getter = sprintf('get%s', (preg_replace('/^get/i', '', Container::camelize($getter))));
-
-						if (method_exists($entity, $getter)) {
-							$value = $entity->$getter();
-						}
-					}
-
-					if (is_callable($getter) && $getter instanceof Closure) {
-						$value = $getter($value);
-					}
-
-					if ($value instanceof Collection) {
-						$value = implode(', ', $value->getValues());
-					}
+				if (is_callable($getter) && $getter instanceof Closure) {
+					$value = $getter($value);
 				}
-
-				if (null === $value && isset($additionalEntityFields[$field])) {
-					$value = $additionalEntityFields[$field];
-				}
-
-				if ($value instanceof Stringable) {
-					$value = $value->__toString();
-				} else {
-					if ($value instanceof DateTime) {
-						$value = $value->format($column->getOption('dateFormat') ?: DateTimeInterface::ATOM);
-					}
-				}
-
-				try {
-					$enum = $column->getEnum() ?: [];
-					$column->setValue($enum[$value] ?? $value);
-				} catch (TypeError $e) {
-				}
-
-				yield $column;
 			}
-		};
 
 
+			if (null === $value && isset($additionalEntityFields[$field])) {
+				$value = $additionalEntityFields[$field];
+			}
+
+			if ($value instanceof Collection) {
+				$value = implode(', ', $value->getValues());
+			}
+
+			if ($value instanceof DateTime) {
+				$value = $value->format($column->getOption('dateFormat') ?: DateTimeInterface::ATOM);
+			}
+
+			if ($value instanceof Stringable) {
+				$value = $value->__toString();
+			}
+
+			try {
+				$enum = $column->getEnum() ?: [];
+				$column->setValue($enum[$value] ?? $value);
+			} catch (TypeError $e) {
+			}
+
+			yield $column;
+		}
+	}
+
+	protected function prepareData(Paginator $paginator, EntityColumnViewTypeEnum $viewType = null)
+	{
 		['items' => $items, 'meta' => $meta] = $paginator->paginate();
 
 		return [
 			'items' => array_map(fn(array|object $entity) => [
 				'entity' => is_object($entity) ? $entity : $entity[0],
-				'data' => $compileEntityData($entity),
+				'data' => $this->compileEntityData($entity, $viewType),
 			], iterator_to_array($items)),
 			'meta' => $meta,
 		];
@@ -225,10 +223,10 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 		Route,
 		Action
 	]
-	public function list(Request $request): Response
+	public function list(Request $request, Action $action = null): Response
 	{
 		$batchForm = $this->handleBatch($request);
-		if($batchForm instanceof Response) {
+		if ($batchForm instanceof Response) {
 			return $batchForm;
 		}
 
@@ -257,11 +255,9 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 			'dataProvider' => $this->prepareData($dataProvider),
 			'filterForm' => $filterForm->createView(),
 			'batchForm' => $this->getBatchForm($request)->createView(),
-			'columns' => array_filter(
-				$this->getEntityColumns(),
-				fn(Column $column) => $column->getSearchable() !== false
-			),
+			'columns' => $this->getEntityColumns(searchable: false),
 			'sort' => $sorting,
+			'title' => $action?->title,
 		]);
 	}
 
@@ -292,12 +288,11 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 		}
 		$query = $this->getEntityRepository()->createQueryBuilder('a');
 		$this
-			->buildQuery($request, $query, self::MODE_EXPORT)
+			->buildQuery($request, $query, EntityColumnViewTypeEnum::Export)
 			->buildCustomQuery($request, $query);
 
 		$objects = $query->getQuery()->getResult();
 
-		$columns = $this->getExportFields();
 
 		//Excel
 		$spreadsheet = new Spreadsheet();
@@ -309,66 +304,19 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 
 		//Header
 		$header = [];
-		foreach ($columns as $columnOption) {
-			$header[] = $translator->trans($columnOption->getLabel());
+		/** @var Column $column */
+		foreach ($this->buildColumns(EntityColumnViewTypeEnum::Export) as ['column' => $column]) {
+			$header[] = $column->getLabel();
 		}
 		$rows = [$header];
 
 		//Rows
 		foreach ($objects as $object) {
-			$customObjectFields = [];
-
-			if (is_array($object)) {
-				if ($object[0]::class === $this->getEntity()->getFqcn()) {
-					$customObjectFields = array_filter($object, fn($key) => !is_numeric($key), ARRAY_FILTER_USE_KEY);
-					$object = $object[0];
-				} else {
-					throw new Exception('Invalid results.');
-				}
-			}
-
 			$row = [];
-			foreach ($columns as $columnField => $columnOption) {
-				$field = $columnOption->field ?? $columnField;
-				$value = null;
-				foreach (['get', 'has', 'is'] as $methodPrefix) {
-					$method = sprintf('%s%s', $methodPrefix, Container::underscore($field));
-					$method = Container::camelize($method);
-
-					if (method_exists($object, $method)) {
-						$value = $object->$method();
-						break;
-					}
-				}
-
-				if (null === $value) {
-					if (isset($customObjectFields[$columnField])) {
-						$value = $customObjectFields[$columnField];
-					}
-				}
-
-				$enum = $columnOption->enum ?: [];
-				$emptyValue = $columnOption->placeholder ?: null;
-
-				if (is_object($value)) {
-					$getter = $columnOption['objectGetter'] ?? null;
-
-					if (!empty($getter)) {
-						$getter = sprintf('get%s', (preg_replace('/^get/i', '', Container::camelize($getter))));
-
-						if (method_exists($value, $getter)) {
-							$value = $value->$getter();
-						}
-					}
-				}
-
-				if ($value instanceof DateTime) {
-					$value = $value->format($columnOption['dateFormat'] ?? DateTimeInterface::ISO8601);
-				}
-
-				array_push($row, $enum[$value] ?? $value ?? $emptyValue);
+			foreach ($this->compileEntityData($object, EntityColumnViewTypeEnum::Export) as $column) {
+				$row[] = $column->getValue();
 			}
-			array_push($rows, $row);
+			$rows[] = $row;
 		}
 		try {
 			$spreadsheet
@@ -377,6 +325,7 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 			$spreadsheet->createSheet();
 			$spreadsheet->setActiveSheetIndex(0);
 		}
+
 		$worksheet = $spreadsheet
 			->getActiveSheet()
 			->fromArray($rows)
@@ -477,7 +426,11 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 				return new RedirectResponse(
 					$this->router->generate(
 						$this->getRoute('edit'),
-						['id' => $this->getEntityClassMetadata()->getIdentifierValues($object)[$entityClassIdentifierFieldName] ?? null]
+						[
+							'id' => $this->getEntityClassMetadata()->getIdentifierValues(
+									$object
+								)[$entityClassIdentifierFieldName] ?? null,
+						]
 					)
 				);
 			}
@@ -513,7 +466,9 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 					throw new Exception(sprintf('Method %s not exists', $method));
 				}
 
-				$objects = $this->getEntityRepository()->findBy([$this->getEntityClassMetadata()->getSingleIdentifierFieldName() => $form->get('ids')->getData()]);
+				$objects = $this->getEntityRepository()->findBy(
+					[$this->getEntityClassMetadata()->getSingleIdentifierFieldName() => $form->get('ids')->getData()]
+				);
 				if ($response = $this->$method($request, $objects)) {
 					if ($response instanceof Response) {
 						return $response;
@@ -664,19 +619,14 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 		);
 
 		$form
-//			->setAction($this->router->generate($this->getRoute('filter')))
 			->setMethod(Request::METHOD_GET);
 
-		foreach ($this->buildColumns() as $columnData) {
+		foreach ($this->buildColumns(searchable: true) as $columnData) {
 			[
 				'fqcn' => $fqcn,
 				'type' => $type,
 				'column' => $column,
 			] = $columnData;
-
-			if ($column->getSearchable() === false) {
-				continue;
-			}
 
 			$formFieldKey = $column->getAlias();
 			$columnOptions = [
@@ -804,7 +754,7 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 		return $this;
 	}
 
-	private function buildColumns(string $mode = null): \Generator
+	private function buildColumns(EntityColumnViewTypeEnum $viewType = null, bool $searchable = false): Generator
 	{
 		$rootEntityMetadata = $this->entityManager->getClassMetadata($this->getEntity()->getFqcn());
 		$buildColumn = function (string $fieldName, Column $column) use ($rootEntityMetadata): array|false {
@@ -853,7 +803,7 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 			];
 		};
 
-		foreach ($this->getEntityColumns($mode) as $column) {
+		foreach ($this->getEntityColumns($viewType, $searchable) as $column) {
 			if (false !== $columnData = $buildColumn($column->getField(), $column)) {
 				yield $columnData;
 			}
@@ -872,8 +822,11 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 	/**
 	 * @throws Exception
 	 */
-	protected function buildQuery(Request $request, QueryBuilder $query, string $mode = self::MODE_DISPLAY): self
-	{
+	protected function buildQuery(
+		Request $request,
+		QueryBuilder $query,
+		EntityColumnViewTypeEnum $viewType = EntityColumnViewTypeEnum::List
+	): self {
 		$entity = $this->getEntity();
 		foreach (($entity->joins ?? []) as $join) {
 			$query->{match ($join->type) {
@@ -899,18 +852,16 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 			}
 		}
 
-		$filters = array_filter($this->getFilters($request), fn(mixed $value) => ($value !== null && $value !== ''));
+		$filters = array_filter($this->getFilters($request), fn(mixed $value) => $value !== null && $value !== '');
 
-		foreach ($this->buildColumns($mode) as $columnData) {
-			[
-				'entityAlias' => $entityAlias,
-				'entityField' => $entityField,
-				'assotiations' => $assotiations,
-				'type' => $type,
-				'column' => $column,
-				'canSelect' => $canSelect,
-			] = $columnData;
-
+		foreach (
+			$this->buildColumns($viewType) as ['entityAlias' => $entityAlias,
+			'entityField' => $entityField,
+			'assotiations' => $assotiations,
+			'type' => $type,
+			'column' => $column,
+			'canSelect' => $canSelect,]
+		) {
 			$hasFilterApplied = isset($filters[$column->getAlias()]) && false !== $column->getSearchable();
 
 			if ($canSelect || $hasFilterApplied) {
@@ -990,31 +941,48 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 	}
 
 	/**
-	 * @param string|null $mode
+	 * @param EntityColumnViewTypeEnum|null $viewType
 	 * @return Column[]
 	 * @throws Exception
 	 *
 	 */
-	public function getEntityColumns(string $mode = null, bool $all = false): array
+	public function getEntityColumns(EntityColumnViewTypeEnum $viewType = null, bool $searchable = false): Generator
 	{
-		$fields = $this->entity->columns;
-
-		if (empty($fields) || $all) {
+		if (empty($this->entity->columns)) {
+			$columns = [];
 			foreach (
 				$this->entityManager->getClassMetadata($this->getEntity()->getFqcn())->getFieldNames() as $fieldName
 			) {
 				if ($entityColumn = $this->getEntityFieldMetadata($fieldName)) {
-					$fields[] = new Column($fieldName);
+					$columns[] = new Column($fieldName);
 				}
 			}
+
+			$this->entity->columns = $columns;
 		}
 
-		return $fields;
+		foreach (
+			array_filter(
+				$this->entity->columns,
+				fn(Column $c) => (
+						null === $c->getViewType() ||
+						$c->getViewType() === $viewType
+					)
+					&&
+					(
+						null === $c->getSearchable() ||
+						$c->getSearchable() instanceof SearchableOptions ||
+						$searchable === $c->getSearchable()
+					)
+			) as $column
+		) {
+			yield $column;
+		}
 	}
 
 	public function getEntityClassMetadata(): ClassMetadata
 	{
-		if(!$this->entityClassMetadata) {
+		if (!$this->entityClassMetadata) {
 			$this->entityClassMetadata = $this->entityManager->getClassMetadata($this->getEntity()->getFqcn());
 		}
 
@@ -1032,11 +1000,6 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 		}
 
 		return $this->getEntityClassMetadata()->getFieldMapping(lcfirst($field));
-	}
-
-	protected function getExportFields(): array
-	{
-		return [];
 	}
 
 	/**

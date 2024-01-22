@@ -20,7 +20,7 @@ class Entity
 		public string $alias = 'a',
 		public ?array $columns = null,
 		public ?array $joins = null,
-		public array|null $group = null
+		public array|null $group = null,
 	) {
 	}
 

@@ -12,7 +12,7 @@
     {% endif %}
 {% endmacro %}
 {% macro filterList(filterForm) %}
-    {% for formField in filterForm.children|filter(formField => formField.vars.data is not empty) %}
+    {% for formField in filterForm.children|filter(formField => formField.vars.data is not null) %}
         {% if formField.children|length %}
             {{ _self.filterList(formField) }}
         {% else %}
@@ -31,7 +31,7 @@
 {% endmacro %}
 
 
-{% set hasFilters = filterForm.vars.data|default([])|filter(v => v)|length %}
+{% set hasFilters = filterForm.vars.data|default([])|filter(v => v is not null)|length %}
 {% block body %}
     <div class="list">
         <div class="content-header d-md-flex mb-3 justify-content-between align-items-center">
@@ -61,8 +61,7 @@
                                 <div class="mb-3 btn-group-sm">
                                     <button type="submit" class="btn btn-success me-2">{{ 'Search'|trans }}</button>
                                     {% if hasFilters %}
-                                        <a class="btn btn-default"
-                                           href="{{ generatePath('list', { _reset: 1 }) }}">{{ 'Reset'|trans }}</a>
+                                        <a class="btn btn-default" href="{{ generatePath('list', { filter: '' }) }}">{{ 'Reset'|trans }}</a>
                                     {% endif %}
                                 </div>
                                 {{ form_end(filterForm) }}
@@ -71,7 +70,7 @@
                     </div>
                 {% endif %}
                 {% if hasFilters %}
-                    <a href="{{ generatePath('list', { _reset: 1 }) }}" class="btn btn-outline-dark">x</a>
+                    <a href="{{ generatePath('list', { filter: '' }) }}" class="btn btn-outline-dark">x</a>
                 {% endif %}
             </div>
         </div>

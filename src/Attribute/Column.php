@@ -3,6 +3,7 @@
 namespace Dakataa\Crud\Attribute;
 
 use Attribute;
+use Dakataa\Crud\Attribute\Enum\EntityColumnViewTypeEnum;
 use Dakataa\Crud\Enum\SortTypeEnum;
 use Stringable;
 use Symfony\Component\DependencyInjection\Container;
@@ -17,6 +18,7 @@ class Column
 		protected ?string $placeholder = null,
 		protected ?array $enum = null,
 		protected bool $raw = false,
+		protected ?EntityColumnViewTypeEnum $viewType = null,
 		protected int|float|string|Stringable|null $value = null,
 		protected SearchableOptions|bool|null $searchable = null,
 		protected bool|SortTypeEnum $sortable = true,
@@ -25,7 +27,8 @@ class Column
 	) {
 	}
 
-	public function getAlias(): string {
+	public function getAlias(): string
+	{
 		return lcfirst(Container::camelize(str_replace('.', '_', $this->getField())));
 	}
 
@@ -44,6 +47,7 @@ class Column
 	public function getLabel(): ?string
 	{
 		$label = explode('.', $this->label ?: $this->field);
+
 		return ucfirst(array_pop($label));
 	}
 
@@ -138,7 +142,8 @@ class Column
 		return $this;
 	}
 
-	public function getOption(string $key): mixed {
+	public function getOption(string $key): mixed
+	{
 		return $this->options[$key] ?? null;
 	}
 
@@ -162,6 +167,18 @@ class Column
 	public function setSortable(SortTypeEnum|bool $sortable): Column
 	{
 		$this->sortable = $sortable;
+
+		return $this;
+	}
+
+	public function getViewType(): ?EntityColumnViewTypeEnum
+	{
+		return $this->viewType;
+	}
+
+	public function setViewType(?EntityColumnViewTypeEnum $viewType): Column
+	{
+		$this->viewType = $viewType;
 
 		return $this;
 	}
