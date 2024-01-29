@@ -54,7 +54,7 @@ class CrudExtension extends AbstractExtension
 	public function getRoute(string $method, string $fqcn = null)
 	{
 		$fqcn ??= $this->getControllerClass();
-		$mappedRoutes = $this->crudSubscriber->getMapActionToRoute($fqcn);
+		$mappedRoutes = $this->crudSubscriber->getMapActionToRoute($fqcn, $this->getEntityFQCN());
 
 		return $mappedRoutes[$method] ?? ($fqcn.'::'.$method);
 	}
@@ -75,7 +75,7 @@ class CrudExtension extends AbstractExtension
 	{
 		$arguments = func_get_args();
 		$isClassPassed = class_exists($arguments[0]);
-		$fqcn = $isClassPassed ? $arguments[0] : $this->getControllerClass();
+		$controllerFqcn = $isClassPassed ? $arguments[0] : $this->getControllerClass();
 		$method = ($isClassPassed ? $arguments[1] : $arguments[0]);
 		$parameters = ($isClassPassed ? ($arguments[2] ?? []) : ($arguments[1] ?? []));
 
@@ -83,7 +83,7 @@ class CrudExtension extends AbstractExtension
 			throw new Exception('Invalid Argument "$parameters" its should be array.');
 		}
 
-		return $this->router->generate($this->getRoute($method, $fqcn), $parameters);
+		return $this->router->generate($this->getRoute($method, $controllerFqcn), $parameters);
 	}
 
 	public function getControllerClass(): string

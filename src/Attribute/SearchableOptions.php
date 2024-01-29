@@ -3,6 +3,7 @@
 namespace Dakataa\Crud\Attribute;
 
 use Attribute;
+use Symfony\Component\Serializer\Attribute\Ignore;
 
 #[Attribute(Attribute::TARGET_CLASS | Attribute::IS_REPEATABLE)]
 class SearchableOptions
@@ -26,6 +27,7 @@ class SearchableOptions
 		return $this;
 	}
 
+	#[Ignore]
 	public function getType(): ?string
 	{
 		return $this->type;

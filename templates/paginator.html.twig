@@ -1,25 +1,25 @@
-{% if (dataProvider is defined) and (route is defined) %}
-    {% set totalPages = dataProvider.meta.totalPages %}
+{% if (data is defined) and (route is defined) %}
+    {% set totalPages = data.meta.totalPages %}
     <div class="d-flex flex-column">
         <small class="mb-2 text-center">
-            {{ dataProvider.meta.totalResults }} - {{ 'Page'|trans }} {{ dataProvider.meta.page }} {{ 'of'|trans }} {{ dataProvider.meta.totalPages }}
+            {{ data.meta.totalResults }} - {{ 'Page'|trans }} {{ data.meta.page }} {{ 'of'|trans }} {{ data.meta.totalPages }}
         </small>
-        {% if dataProvider.meta.totalPages > 1 %}
+        {% if data.meta.totalPages > 1 %}
             <nav aria-label="Page navigation" class="m-auto text-center d-inline">
                 <ul class="pagination pagination-sm">
-                    {% if (dataProvider.meta.page > 1) and (dataProvider.meta.totalPages > 5) %}
+                    {% if (data.meta.page > 1) and (data.meta.totalPages > 5) %}
                         <li class="page-item">
                             <a title="{{ 'first page'|trans }}" {% if ajax is defined %}data-toggle="ajax" data-target="{{ ajax }}" data-mode="replace"{% endif %} href="{{ url(route, params|default({})|merge({page: 1})) }}" class="page-link">
                                 &laquo;
                             </a>
                         </li>
                     {% endif %}
-                    {% for page in dataProvider.meta.links %}
-                        <li class="page-item{% if page == dataProvider.meta.page %} active{% endif %}">
+                    {% for page in data.meta.links %}
+                        <li class="page-item{% if page == data.meta.page %} active{% endif %}">
                             <a {% if ajax is defined %}data-toggle="ajax" data-target="{{ ajax }}" data-mode="replace"{% endif %} href="{{ url(route, params|default({})|merge({page: page})) }}" class="page-link">{{ page }}</a>
                         </li>
                     {% endfor %}
-                    {% if (dataProvider.meta.page < totalPages) and (totalPages > 5) %}
+                    {% if (data.meta.page < totalPages) and (totalPages > 5) %}
                         <li class="page-item">
                             <a title="{{ 'last page'|trans }}" {% if ajax is defined %}data-toggle="ajax" data-target="{{ ajax }}" data-mode="replace" data-changeurl="true"{% endif %} href="{{ url(route, params|default({})|merge({page: totalPages})) }}" class="page-link">
                                 &raquo;

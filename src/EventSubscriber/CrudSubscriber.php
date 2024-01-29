@@ -2,7 +2,6 @@
 
 namespace Dakataa\Crud\EventSubscriber;
 
-
 use Dakataa\Crud\Attribute\Action;
 use Dakataa\Crud\Attribute\Entity;
 use Dakataa\Crud\Attribute\EntityType;
@@ -26,7 +25,6 @@ use Twig\Environment;
 
 class CrudSubscriber
 {
-
 	public function __construct(
 		protected FormFactoryInterface $formFactory,
 		protected RouterInterface $router,
@@ -34,7 +32,7 @@ class CrudSubscriber
 		protected EntityManagerInterface $entityManager,
 		protected ParameterBagInterface $parameterBag,
 		protected AuthorizationCheckerInterface $authorizationChecker,
-		protected Environment $twig
+		protected ?Environment $twig = null
 	) {
 	}
 
@@ -45,7 +43,7 @@ class CrudSubscriber
 			return;
 		}
 
-		[$controllerObject] = $event->getController();
+		[$controllerObject, $method] = $event->getController();
 
 		if (is_a($controllerObject, AbstractCrudController::class, true)) {
 			return;
@@ -75,7 +73,7 @@ class CrudSubscriber
 				EventDispatcherInterface $dispatcher,
 				EntityManagerInterface $entityManager,
 				ParameterBagInterface $parameterBag,
-				Environment $twig
+				?Environment $twig = null
 			) {
 				$this->originClassName = get_class($this->controllerEvent->getController()[0]);
 
@@ -94,7 +92,10 @@ class CrudSubscriber
 
 			public function getMappedRoutes(): array
 			{
-				return $this->crudSubscriber->getMapActionToRoute($this->getControllerClass(), $this->getEntity()?->fqcn);
+				return $this->crudSubscriber->getMapActionToRoute(
+					$this->getControllerClass(),
+					$this->getEntity()?->fqcn
+				);
 			}
 		};
 
@@ -117,8 +118,11 @@ class CrudSubscriber
 			}
 		}
 
-		$event->getRequest()->attributes->set('_entityFQCN', ($this->getAttributes($event, Entity::class)[0]?? null)?->fqcn);
-		$event->getRequest()->attributes->set('action', $action);
+		$event->getRequest()->attributes->set(
+			'_entityFQCN',
+			($this->getAttributes($event, Entity::class)[0] ?? null)?->fqcn
+		);
+//		$event->getRequest()->attributes->set('action', (clone $action)->setAction($method));
 
 		$event->setController([$controller, $action->action]);
 	}
@@ -162,7 +166,9 @@ class CrudSubscriber
 								$entityFQCN
 							) {
 								/** @var Route|null $routeAttribute */
-								$routeAttribute = ($reflectionMethod->getAttributes(Route::class)[0] ?? null)?->newInstance();
+								$routeAttribute = ($reflectionMethod->getAttributes(
+									Route::class
+								)[0] ?? null)?->newInstance();
 
 								/** @var IsGranted[] $isGrantedAttributes */
 								$isGrantedAttributes = array_map(
@@ -170,14 +176,14 @@ class CrudSubscriber
 									$reflectionMethod->getAttributes(IsGranted::class)
 								);
 
-								if($entityFQCN) {
+								if ($entityFQCN) {
 									/** @var string[] $entityAttributesFQCN */
 									$entityAttributesFQCN = array_map(
 										fn(ReflectionAttribute $refAttribute) => $refAttribute->newInstance()->fqcn,
 										$reflectionMethod->getAttributes(Entity::class)
 									);
 
-									if(empty($entityAttributesFQCN)) {
+									if (empty($entityAttributesFQCN)) {
 										$entityAttributesFQCN = array_map(
 											fn(ReflectionAttribute $refAttribute) => $refAttribute->newInstance()->fqcn,
 											$reflectionClass->getAttributes(Entity::class)
@@ -196,17 +202,15 @@ class CrudSubscriber
 								}
 
 								$action = ($actionRefAttribute->newInstance()->action ?: $reflectionMethod->name);
-								$route = $routeAttribute?->getName() ?: ($reflectionClass->name.'::'.$reflectionMethod->name);
+								$route = $routeAttribute?->getName(
+								) ?: ($reflectionClass->name.'::'.$reflectionMethod->name);
 
-								switch ($action) {
-									case 'add':
-									case 'edit':
-									{
-										if(empty($reflectionMethod->getAttributes(EntityType::class)) && empty($reflectionClass->getAttributes(EntityType::class))) {
-											return null;
-										}
-										break;
-									}
+								if (empty(
+									$reflectionMethod->getAttributes(
+										EntityType::class
+									)
+									) && empty($reflectionClass->getAttributes(EntityType::class))) {
+									return null;
 								}
 
 								return [

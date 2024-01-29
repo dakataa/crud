@@ -4,6 +4,9 @@ namespace Dakataa\Crud\Controller;
 
 use Closure;
 use Dakataa\Crud\Attribute\Enum\EntityColumnViewTypeEnum;
+use Dakataa\Crud\Serializer\Normalizer\ColumnNormalizer;
+use Dakataa\Crud\Serializer\Normalizer\FormErrorNormalizer;
+use Dakataa\Crud\Serializer\Normalizer\FormViewNormalizer;
 use Generator;
 use Dakataa\Crud\Attribute\Action;
 use Dakataa\Crud\Attribute\Column;
@@ -33,7 +36,6 @@ use ReflectionClass;
 use ReflectionException;
 use ReflectionMethod;
 use Stringable;
-use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\DependencyInjection\Container;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
@@ -47,6 +49,7 @@ use Symfony\Component\Form\Form;
 use Symfony\Component\Form\FormFactoryInterface;
 use Symfony\Component\Form\FormInterface;
 use Symfony\Component\Form\FormTypeInterface;
+use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -54,12 +57,21 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\Routing\RouterInterface;
+use Symfony\Component\Serializer\Encoder\JsonEncoder;
+use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
+use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
+use Symfony\Component\Serializer\Normalizer\AbstractNormalizer;
+use Symfony\Component\Serializer\Normalizer\ArrayDenormalizer;
+use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
+use Symfony\Component\Serializer\Normalizer\DateTimeNormalizer;
+use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
+use Symfony\Component\Serializer\Serializer;
+use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\Validator\Constraints as Assert;
-use Symfony\Contracts\Translation\TranslatorInterface;
 use Twig\Environment;
 use TypeError;
 
-abstract class AbstractCrudController extends AbstractController implements CrudControllerInterface
+abstract class AbstractCrudController implements CrudControllerInterface
 {
 	const ENTITY_ROOT_ALIAS = 'a';
 
@@ -91,7 +103,8 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 		protected EventDispatcherInterface $dispatcher,
 		protected EntityManagerInterface $entityManager,
 		protected ParameterBagInterface $parameterBag,
-		protected Environment $twig
+		protected ?Environment $twig = null,
+		protected ?SerializerInterface $serializer = null
 	) {
 		$this->entity = $this->getAttribute(Entity::class);
 		$this->entityType = $this->getAttribute(EntityType::class);
@@ -106,6 +119,10 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 
 		if (empty($this->entity?->columns)) {
 			$this->entity?->setColumns($this->getAttributes(Column::class));
+		}
+
+		if (count($this->getEntityClassMetadata()->getIdentifierFieldNames()) > 1) {
+			throw new Exception('Entity with two or more identifier columns are not supported.');
 		}
 	}
 
@@ -125,30 +142,26 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 		return $this->entityType;
 	}
 
-	public final function redirectToRoute(
-		string $route,
-		array $parameters = [],
-		int $status = 302
-	): RedirectResponse {
-		return new RedirectResponse($this->router->generate($route, $parameters, $status));
-	}
-
-	protected function compileEntityData(array|object $entity, EntityColumnViewTypeEnum $viewType = null): Generator
-	{
+	protected function compileEntityData(
+		array|object $object,
+		EntityColumnViewTypeEnum $viewType = null,
+		bool $raw = false
+	): array {
 		$additionalEntityFields = [];
-		if (is_array($entity)) {
-			if ($entity[0]::class === $this->getEntity()->getFqcn()) {
+		if (is_array($object)) {
+			if ($object[0]::class === $this->getEntity()->getFqcn()) {
 				$additionalEntityFields = array_filter(
-					$entity,
+					$object,
 					fn(mixed $key) => !is_numeric($key),
 					ARRAY_FILTER_USE_KEY
 				);
-				$entity = $entity[0];
+				$object = $object[0];
 			} else {
 				throw new Exception('Invalid results.');
 			}
 		}
 
+		$result = [];
 		foreach ($this->getEntityColumns($viewType) as $column) {
 			$field = $column->getAlias();
 
@@ -156,8 +169,8 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 			foreach (['get', 'has', 'is'] as $methodPrefix) {
 				$method = Container::camelize(sprintf('%s%s', $methodPrefix, Container::underscore($field)));
 
-				if (method_exists($entity, $method)) {
-					$value = $entity->$method();
+				if (method_exists($object, $method)) {
+					$value = $object->$method();
 					break;
 				}
 			}
@@ -166,8 +179,8 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 				if (is_string($getter)) {
 					$getter = sprintf('get%s', (preg_replace('/^get/i', '', Container::camelize($getter))));
 
-					if (method_exists($entity, $getter)) {
-						$value = $entity->$getter();
+					if (method_exists($object, $getter)) {
+						$value = $object->$getter();
 					}
 				}
 
@@ -193,24 +206,30 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 				$value = $value->__toString();
 			}
 
+			if (is_object($value)) {
+				$value = json_encode($value);
+			}
+
 			try {
 				$enum = $column->getEnum() ?: [];
-				$column->setValue($enum[$value] ?? $value);
+				$value = $enum[$value] ?? $value;
 			} catch (TypeError $e) {
 			}
 
-			yield $column;
+			$result[$column->getField()] = $value;
 		}
+
+		return $result;
 	}
 
-	protected function prepareData(Paginator $paginator, EntityColumnViewTypeEnum $viewType = null)
+	protected function prepareListData(Paginator $paginator, EntityColumnViewTypeEnum $viewType = null): array
 	{
 		['items' => $items, 'meta' => $meta] = $paginator->paginate();
 
 		return [
-			'items' => array_map(fn(array|object $entity) => [
-				'entity' => is_object($entity) ? $entity : $entity[0],
-				'data' => $this->compileEntityData($entity, $viewType),
+			'items' => array_map(fn(array|object $object) => [
+				'object' => is_object($object) ? $object : $object[0],
+				'data' => $this->compileEntityData($object, $viewType),
 			], iterator_to_array($items)),
 			'meta' => $meta,
 		];
@@ -246,29 +265,32 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 			->buildQuery($request, $query)
 			->buildCustomQuery($request, $query);
 
-		$dataProvider = (new Paginator($query, $request->query->getInt('page', 1)))
+		$paginator = (new Paginator($query, $request->query->getInt('page', 1)))
 			->setMaxResults($this->prepareResultsLimit($request));
 
 		$request->attributes->set('_entityFQCN', $this->entity->fqcn);
 
-		return $this->response('list', [
-			'dataProvider' => $this->prepareData($dataProvider),
+		return $this->response($request, [
+			'columns' => iterator_to_array($this->getEntityColumns(searchable: false)),
+			'data' => $this->prepareListData($paginator),
 			'filterForm' => $filterForm->createView(),
 			'batchForm' => $this->getBatchForm($request)->createView(),
-			'columns' => $this->getEntityColumns(searchable: false),
 			'sort' => $sorting,
 			'title' => $action?->title,
-		]);
+		], defaultTemplate: 'list');
 	}
 
 	/**
 	 * @throws Exception
 	 */
-	#[Route(path: '/export/{type}')]
+	#[
+		Route(path: '/export/{type}'),
+		Action
+	]
 	public function export(
 		Request $request,
-		TranslatorInterface $translator,
-		string $type = self::EXPORT_EXCEL
+		string $type = self::EXPORT_EXCEL,
+		Action $action = null
 	): StreamedResponse {
 		$exportTypes = [
 			self::EXPORT_EXCEL => ['ext' => 'xlsx', 'writer' => Xlsx::class],
@@ -298,9 +320,9 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 		$spreadsheet = new Spreadsheet();
 		$spreadsheet
 			->getProperties()
-			->setCreator(sprintf('Auto generated: %s', $this->getUser()))
+			->setCreator(sprintf('Auto generated: %s', 'Dakataa CRUD'))
 			->setTitle('Export')
-			->setCompany('Company');
+			->setCompany($action?->title ?: 'Export');
 
 		//Header
 		$header = [];
@@ -312,12 +334,9 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 
 		//Rows
 		foreach ($objects as $object) {
-			$row = [];
-			foreach ($this->compileEntityData($object, EntityColumnViewTypeEnum::Export) as $column) {
-				$row[] = $column->getValue();
-			}
-			$rows[] = $row;
+			$rows[] = $this->compileEntityData($object, EntityColumnViewTypeEnum::Export);
 		}
+
 		try {
 			$spreadsheet
 				->setActiveSheetIndex(0);
@@ -357,12 +376,42 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 	}
 
 	/**
-	 * @param int|null $id
+	 * @throws Exception
+	 */
+	#[Route(path: '/{id}/view', requirements: ['id' => '\d+'])]
+	#[Action]
+	public function view(Request $request, int $id, Action $action = null): ?Response
+	{
+		$queryBuilder = $this
+			->getEntityRepository()
+			->createQueryBuilder(self::ENTITY_ROOT_ALIAS)
+			->where(
+				sprintf(
+					'%s.%s = :id',
+					self::ENTITY_ROOT_ALIAS,
+					$this->getEntityClassMetadata()->getSingleIdentifierFieldName()
+				)
+			)
+			->setParameter('id', $id);
+
+		$object = $queryBuilder->getQuery()->getOneOrNullResult();
+		if (empty($object)) {
+			throw new NotFoundHttpException('Not Found');
+		}
+
+		return $this->response($request, [
+			'object' => $object,
+			'data' => $this->compileEntityData($object),
+			'columns' => $this->getEntityColumns(EntityColumnViewTypeEnum::View)
+		], defaultTemplate: 'view');
+	}
+
+	/**
 	 * @throws Exception
 	 */
 	#[Route(path: '/{id}/edit', requirements: ['id' => '\d+'])]
 	#[Action]
-	public function edit(Request $request, int $id = null): ?Response
+	public function edit(Request $request, int $id = null, Action $action = null): ?Response
 	{
 		if (empty($this->getEntityType())) {
 			throw new NotFoundHttpException('Not Entity Type found.');
@@ -371,10 +420,6 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 		$object = null;
 		$entityClassIdentifierFieldName = $this->getEntityClassMetadata()->getSingleIdentifierFieldName();
 		if ($id) {
-			if (count($this->getEntityClassMetadata()->getIdentifierFieldNames()) > 1) {
-				throw new Exception('Entity with two or more identifier columns are not supported.');
-			}
-
 			$queryBuilder = $this
 				->getEntityRepository()
 				->createQueryBuilder(self::ENTITY_ROOT_ALIAS)
@@ -388,15 +433,12 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 		}
 
 		//Setup Form type options
-		$formOptions = [
+		$formOptions = array_merge_recursive([
 			'action' => $request->getUri(),
-			'method' => 'POST',
-			'attr' => [
-				'data-submit' => 'true',
-			],
-		];
-		$formOptions = array_merge_recursive($formOptions, $this->getEntityType()->getOptions() ?: []);
-		//PERMISSION
+			'method' => Request::METHOD_POST,
+			'csrf_protection' => false
+		], $this->getEntityType()->getOptions() ?: []);
+
 		if (empty($object)) {
 			$entityClass = $this->getEntity()->getFqcn();
 			$object = new $entityClass();
@@ -409,7 +451,9 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 			$object,
 			$formOptions
 		);
+
 		$this->onFormTypeCreate($request, $form, $object);
+		$responseStatus = 200;
 		if ($request->isMethod(Request::METHOD_POST)) {
 			$form->handleRequest($request);
 
@@ -418,28 +462,27 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 
 				$this->entityManager->persist($form->getData());
 				$this->entityManager->flush();
+
 				$this->afterFormSave($request, $form);
-				$request->getSession()->getFlashBag()->add('notice', 'Item was saved successfully.');
 
-				$object = $form->getData();
+				if($request->hasSession()) {
+					$request->getSession()->getFlashBag()->add('notice', 'Item was saved successfully.');
+				}
 
-				return new RedirectResponse(
-					$this->router->generate(
-						$this->getRoute('edit'),
-						[
-							'id' => $this->getEntityClassMetadata()->getIdentifierValues(
-									$object
-								)[$entityClassIdentifierFieldName] ?? null,
-						]
-					)
-				);
+				if($request->getPreferredFormat() === 'html') {
+					return new RedirectResponse($this->router->generate($this->getRoute('edit'), [
+						'id' => $this->getEntityClassMetadata()->getIdentifierValues($form->getData())[$entityClassIdentifierFieldName] ?? null
+					]));
+				}
+			} else {
+				$responseStatus = 400;
 			}
 		}
 
-		return $this->response('edit', [
+		return $this->response($request, [
 			'object' => $object,
 			'form' => $form->createView(),
-		]);
+		], $responseStatus, defaultTemplate: 'edit');
 	}
 
 	#[Route(path: '/{id}/delete', requirements: ['id' => '\d+'])]
@@ -488,7 +531,9 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 			}
 
 			$this->entityManager->flush();
-			$request->getSession()->getFlashBag()->add('notice', 'Items was deleted successfully!');
+			if($request->hasSession()) {
+				$request->getSession()->getFlashBag()->add('notice', 'Items was deleted successfully!');
+			}
 		}
 	}
 
@@ -512,16 +557,20 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 		);
 	}
 
-	protected function getTemplate(string $action): string
+	protected function getTemplate(string $template, string $fallbackTemplate = null): string
 	{
+		if (!$this->twig) {
+			throw new Exception('Missing Twig Templating Engine.');
+		}
+
 		$templatePath = sprintf(
 			'%s/%s.html.twig',
 			$this->getTemplateDirectoryByClass($this->getControllerClass()),
-			$action
+			$template
 		);
 
 		if (!$this->twig->getLoader()->exists($templatePath)) {
-			$templatePath = sprintf('@DakataaCrud/%s.html.twig', $action);
+			$templatePath = sprintf('@DakataaCrud/%s.html.twig', $fallbackTemplate ?: $template);
 		}
 
 		return $templatePath;
@@ -530,9 +579,45 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 	/**
 	 * @throws Exception
 	 */
-	protected function response(string $action, array $parameters = []): Response
+	protected function response(Request $request, array $data, int $status = 200, string $defaultTemplate = null): Response
 	{
-		return new Response($this->twig->render($this->getTemplate($action), $parameters));
+		[, $template] = explode('::', $request->get('_controller'));
+
+		$attributes = array_merge(...array_map(fn(Column $column) => explode('.', $column->getField()), iterator_to_array($this->getEntityColumns())));
+
+		switch ($request->getPreferredFormat()) {
+			case 'json': {
+				$classMetadataFactory = new ClassMetadataFactory(new AttributeLoader());
+				$serializer = new Serializer(
+					[
+						new FormErrorNormalizer(),
+						new FormViewNormalizer(),
+						new BackedEnumNormalizer(),
+						new ColumnNormalizer(),
+						new DateTimeNormalizer([
+							DateTimeNormalizer::FORMAT_KEY => 'Y-m-d H:i:s',
+						]),
+						new ObjectNormalizer($classMetadataFactory, defaultContext: [
+							AbstractNormalizer::GROUPS => ['view'],
+//							AbstractNormalizer::ATTRIBUTES => $attributes
+						]),
+					]
+				);
+
+				return new JsonResponse(
+					$serializer->normalize($data, context: [
+						AbstractNormalizer::CIRCULAR_REFERENCE_HANDLER => fn() => null,
+					]), $status
+				);
+				break;
+			}
+			default:
+				return new Response(
+					$this->twig->render($this->getTemplate($template, $defaultTemplate), $data),
+					$status
+				);
+		}
+
 	}
 
 	protected function getBatchForm(Request $request): FormInterface
@@ -542,7 +627,6 @@ abstract class AbstractCrudController extends AbstractController implements Crud
 			->createNamedBuilder('batch', options: [
 				...($this->parameterBag->get('form.type_extension.csrf.enabled') ? ['csrf_protection' => false] : []),
 			])
-//			->setAction($this->router->generate($this->getRoute('batch')))
 			->setMethod('POST');
 
 		$form

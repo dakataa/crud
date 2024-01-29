@@ -1,0 +1,45 @@
+{% extends [getParameter('layout')|default(''), '@DakataaCrud/layout/default.html.twig'] %}
+
+{%- block title -%}View{% endblock title %}
+
+{% block body %}
+    <section class="edit-items">
+        {% block header %}
+            <header>
+                <div class="wrap">
+                    <h2 class="title">
+                        <a href="javascript:history.back()">&larr;</a>
+                        {% block body_title %}
+                            {{ block('title') }}
+                        {% endblock %}
+                    </h2>
+                    {% block navigation %}
+                        <nav class="nav">
+                            {% block tab_navigation_tabs %}
+                                {% if hasAction('edit') %}
+                                    <a class="btn btn-outline-primary" href="{{ generatePath('edit', {id: entityPrimaryKey(object)}) }}">Edit</a>
+                                {% endif %}
+                            {% endblock %}
+                        </nav>
+                    {% endblock %}
+                </div>
+            </header>
+        {% endblock %}
+        <main class="tabs">
+            <div class="wrap">
+                <hr/>
+                {% for column in columns %}
+                    <div class="row mb-3">
+                        <div class="col-12 col-lg-4">
+                            <strong>{{ column.label }}</strong>
+                        </div>
+                        <div class="col-12 col-lg-8">
+                            {{ data[column.field]|default('-') }}
+                        </div>
+                    </div>
+                    <hr/>
+                {% endfor %}
+            </div>
+        </main>
+    </section>
+{% endblock %}
