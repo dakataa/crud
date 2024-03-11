@@ -11,13 +11,13 @@
         {{ formField.vars.data }}
     {% endif %}
 {% endmacro %}
-{% macro filterList(filterForm) %}
-    {% for formField in filterForm.children|filter(formField => formField.vars.data is not null) %}
+{% macro filterList(form) %}
+    {% for formField in form.children|filter(formField => formField.vars.data is not null) %}
         {% if formField.children|length %}
             {{ _self.filterList(formField) }}
         {% else %}
             <div class="filters-item d-flex text-nowrap flex-column me-2 mb-2">
-                {% set filterVars = filterForm.vars.data|default([])|filter((fv,fk) => fk != formField.vars.name and fv is not empty) %}
+                {% set filterVars = form.vars.data|default([])|filter((fv,fk) => fk != formField.vars.name and fv is not empty) %}
 
                 <small class="mb-2">{{ (formField.vars.label ?? formField.vars.name)|capitalize|trans }}</small>
                 <div class="btn btn-sm btn-primary me-1 mb-1">
@@ -31,7 +31,7 @@
     {% endfor %}
 {% endmacro %}
 
-{% set hasFilters = filterForm.vars.data|default([])|filter(v => v is not null)|length %}
+{% set hasFilters = form.filter.vars.data|default([])|filter(v => v is not null)|length %}
 {% block body %}
     <div class="list">
         <div class="content-header d-md-flex mb-3 justify-content-between align-items-center">
@@ -53,7 +53,7 @@
                         <i class="fas fa-download"></i> {{ 'Export'|trans }}
                     </a>
                 {% endif %}
-                {% if filterForm %}
+                {% if form.filter %}
                     <div class="btn-group btn-group-sm">
                         <button type="button" class="btn btn-outline-secondary dropdown-toggle"
                                 data-bs-toggle="dropdown">
@@ -62,8 +62,8 @@
 
                         <div class="dropdown-menu dropdown-menu-right" aria-label="menu">
                             <div class="filter">
-                                {{ form_start(filterForm, { attr: {'novalidate': 'novalidate'}}) }}
-                                {{ form_rest(filterForm) }}
+                                {{ form_start(form.filter, { attr: {'novalidate': 'novalidate'}}) }}
+                                {{ form_rest(form.filter) }}
                                 <div class="mb-3 btn-group-sm">
                                     <button type="submit" class="btn btn-success me-2">{{ 'Search'|trans }}</button>
                                     {% if hasFilters %}
@@ -71,7 +71,7 @@
                                            href="{{ generatePath('list', { filter: '' }) }}">{{ 'Reset'|trans }}</a>
                                     {% endif %}
                                 </div>
-                                {{ form_end(filterForm) }}
+                                {{ form_end(form.filter) }}
                             </div>
                         </div>
                     </div>
@@ -82,11 +82,11 @@
             </div>
         </div>
 
-        {{ form_start(batchForm, { attr: {novalidate: 'novalidate', autocomplete:'off'}}) }}
+        {{ form_start(form.batch, { attr: {novalidate: 'novalidate', autocomplete:'off'}}) }}
 
         {% if hasFilters %}
             <div class="filters d-flex mb-sm overflow-auto">
-                {{ _self.filterList(filterForm) }}
+                {{ _self.filterList(form.filter) }}
             </div>
         {% endif %}
         {% if data.items|length %}
@@ -94,7 +94,7 @@
                 <table class="table table-striped table-hover table-bordered">
                     <thead>
                     <tr>
-                        {% if batchForm.method is defined %}
+                        {% if form.batch.method is defined %}
                             <th width="1%">
                                 <input type="checkbox" data-toggle="checkall" data-target=".ids"/>
                             </th>
@@ -125,7 +125,7 @@
                     {% if data.items|length %}
                         {% for row in data.items %}
                             <tr id="row_{{ loop.index }}">
-                                {% if batchForm.method is defined %}
+                                {% if form.batch.method is defined %}
                                     <td>
                                         <input type="checkbox" class="ids" name="batch[ids][]" value="{{ entityPrimaryKey(row.object) }}"/>
                                     </td>
@@ -174,7 +174,7 @@
                         {% endfor %}
                     {% else %}
                         <tr>
-                            <td colspan="{{ columns|length + 1 + (batchForm.method is defined ? 1 : 0) }}">
+                            <td colspan="{{ columns|length + 1 + (form.batch.method is defined ? 1 : 0) }}">
                                 {{ 'Not results found.'|trans }}
                             </td>
                         </tr>
@@ -187,10 +187,10 @@
         {% endif %}
 
         <div class="actions d-flex flex-row flex-wrap align-items-center mb-3">
-            {% if batchForm.method is defined %}
+            {% if form.batch.method is defined %}
                 <div class="btn-group me-2 mb-2">
                     <div class="input-group flex-nowrap">
-                        {{ form_widget(batchForm.method, {attr: {class: 'form-control'}}) }}
+                        {{ form_widget(form.batch.method, {attr: {class: 'form-control'}}) }}
 
                         <button type="submit" class="btn btn-outline-secondary">{{ 'Go'|trans }}</button>
                     </div>
@@ -209,7 +209,7 @@
             {% include '@DakataaCrud/paginator.html.twig' with { data: data, route: getRoute('list')} %}
         </div>
 
-        {{ form_end(batchForm, {'render_rest': false}) }}
+        {{ form_end(form.batch, {'render_rest': false}) }}
     </div>
     <script type="text/javascript">
 		let resultsLimit = document.querySelector('#results-limit');

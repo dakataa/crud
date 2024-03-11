@@ -269,12 +269,14 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		$request->attributes->set('_entityFQCN', $this->entity->fqcn);
 
 		return $this->response($request, [
+			'title' => $action?->title,
 			'columns' => iterator_to_array($this->getEntityColumns(searchable: false)),
 			'data' => $this->prepareListData($paginator),
-			'filterForm' => $filterForm->createView(),
-			'batchForm' => $this->getBatchForm($request)->createView(),
+			'form' => [
+				'filter' => $filterForm->createView(),
+				'batch' => $this->getBatchForm($request)->createView()
+			],
 			'sort' => $sorting,
-			'title' => $action?->title,
 		], defaultTemplate: 'list');
 	}
 
@@ -400,7 +402,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return $this->response($request, [
 			'object' => $object,
 			'data' => $this->compileEntityData($object),
-			'columns' => $this->getEntityColumns(EntityColumnViewTypeEnum::View)
+			'columns' => $this->getEntityColumns(EntityColumnViewTypeEnum::View),
 		], defaultTemplate: 'view');
 	}
 
@@ -411,7 +413,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	#[Action]
 	public function edit(Request $request, int $id = null, Action $action = null): ?Response
 	{
-		if (empty($this->getEntityType())) {
+		if (!$this->getEntityType()) {
 			throw new NotFoundHttpException('Not Entity Type found.');
 		}
 
@@ -434,7 +436,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		$formOptions = array_merge_recursive([
 			'action' => $request->getUri(),
 			'method' => Request::METHOD_POST,
-			'csrf_protection' => false
+			'csrf_protection' => false,
 		], $this->getEntityType()->getOptions() ?: []);
 
 		if (empty($object)) {
@@ -463,14 +465,16 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 				$this->afterFormSave($request, $form);
 
-				if($request->hasSession()) {
+				if ($request->hasSession()) {
 					$request->getSession()->getFlashBag()->add('notice', 'Item was saved successfully.');
 				}
 
-				if($request->getPreferredFormat() === 'html') {
-					return new RedirectResponse($this->router->generate($this->getRoute('edit'), [
-						'id' => $this->getEntityClassMetadata()->getIdentifierValues($form->getData())[$entityClassIdentifierFieldName] ?? null
-					]));
+				if ($request->getPreferredFormat() === 'html') {
+					return new RedirectResponse(
+						$this->router->generate($this->getRoute('edit'), [
+							'id' => $this->getEntityClassMetadata()->getIdentifierValues($form->getData())[$entityClassIdentifierFieldName] ?? null,
+						])
+					);
 				}
 			} else {
 				$responseStatus = 400;
@@ -498,6 +502,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	protected function handleBatch(Request $request): Response|Form
 	{
 		$form = $this->getBatchForm($request);
+
 		if ($request->isMethod(Request::METHOD_POST)) {
 			$form->handleRequest($request);
 			if ($form->isSubmitted() && $form->isValid()) {
@@ -529,7 +534,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			}
 
 			$this->entityManager->flush();
-			if($request->hasSession()) {
+			if ($request->hasSession()) {
 				$request->getSession()->getFlashBag()->add('notice', 'Items was deleted successfully!');
 			}
 		}
@@ -577,14 +582,22 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	/**
 	 * @throws Exception
 	 */
-	protected function response(Request $request, array $data, int $status = 200, string $defaultTemplate = null): Response
-	{
+	protected function response(
+		Request $request,
+		array $data,
+		int $status = 200,
+		string $defaultTemplate = null
+	): Response {
 		[, $template] = explode('::', $request->get('_controller'));
 
-		$attributes = array_merge(...array_map(fn(Column $column) => explode('.', $column->getField()), iterator_to_array($this->getEntityColumns())));
+		$attributes = array_merge(
+			...
+			array_map(fn(Column $column) => explode('.', $column->getField()), iterator_to_array($this->getEntityColumns()))
+		);
 
 		switch ($request->getPreferredFormat()) {
-			case 'json': {
+			case 'json':
+			{
 				$classMetadataFactory = new ClassMetadataFactory(new AttributeLoader());
 				$serializer = new Serializer(
 					[
@@ -615,7 +628,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 					$status
 				);
 		}
-
 	}
 
 	protected function getBatchForm(Request $request): FormInterface
@@ -636,28 +648,25 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				],
 			]);
 
-
-		$classInstance = new ReflectionClass($this->getControllerClass());
-		$methods = [];
-		foreach (
-			$classInstance->getMethods(
-				ReflectionMethod::IS_PUBLIC | ReflectionMethod::IS_PROTECTED
-			) as $reflectionMethod
-		) {
-			if (!str_starts_with($reflectionMethod->getShortName(), 'batch')) {
-				continue;
-			}
-
-			$action = Container::underscore(str_replace('batch', '', $reflectionMethod->getShortName()));
-			if (empty($action)) {
-				continue;
-			}
-
-			$methods[] = [
-				'action' => $action,
-				'label' => $action,
-			];
-		}
+		$methods = array_reduce(
+			array_filter(
+				array_map(
+					fn(ReflectionMethod $reflectionMethod) => Container::underscore(str_replace('batch', '', $reflectionMethod->getShortName())),
+					array_filter(
+						(new ReflectionClass($this->getControllerClass()))->getMethods(ReflectionMethod::IS_PUBLIC | ReflectionMethod::IS_PROTECTED),
+						fn(ReflectionMethod $reflectionMethod) => str_starts_with($reflectionMethod->getShortName(), 'batch')
+					)
+				)
+			),
+			fn(array $result, string $action) => [
+				...$result,
+				[
+					'action' => $action,
+					'label' => $action,
+				],
+			],
+			[]
+		);
 
 		$choices = [];
 		foreach ($methods as $method) {
