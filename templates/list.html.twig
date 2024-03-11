@@ -99,7 +99,7 @@
                                 <input type="checkbox" data-toggle="checkall" data-target=".ids"/>
                             </th>
                         {% endif %}
-                        {% for column in columns|filter((options, column) => (rolesForClass(column.permission|default('')) is empty or (rolesForClass(column.permission|default('index'))|reduce((a, b) => (a == null or a == true ? is_granted(b) : false), null)) or (is_granted('ROLE_SUPER_ADMIN') == true))) %}
+                        {% for column in columns|filter(column => column.roles is empty or is_granted(column.roles)) %}
                             {% set columnHeaderBlock = column.alias ~ '_header' %}
                             {% block columnHeaderBlock %}
                                 <th>
@@ -130,8 +130,8 @@
                                         <input type="checkbox" class="ids" name="batch[ids][]" value="{{ entityPrimaryKey(row.object) }}"/>
                                     </td>
                                 {% endif %}
-                                {% for field, value in row.data %}
-                                    {% set column = columns|filter(c => c.field == field)|first %}
+                                {% for column in columns|filter(column => column.roles is empty or is_granted(column.roles)) %}
+                                    {% set value = row.data[column.field] ?? null %}
                                     {% set columnBlockKey = 'column_' ~ column.alias %}
                                     {% set columnValueBlockKey = 'column_' ~ column.alias ~ '_value' %}
                                     {% if (block(columnBlockKey) is defined) and (block(columnBlockKey) is not empty) %}
