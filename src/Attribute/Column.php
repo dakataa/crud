@@ -23,7 +23,8 @@ class Column
 		protected SearchableOptions|bool|null $searchable = null,
 		protected bool|SortTypeEnum $sortable = true,
 		protected array $options = [],
-		protected mixed $roles = null
+		protected string|array|null $roles = null,
+		protected bool $identifier = false
 	) {
 	}
 
@@ -147,12 +148,12 @@ class Column
 		return $this->options[$key] ?? null;
 	}
 
-	public function getRoles(): mixed
+	public function getRoles(): string|array|null
 	{
 		return $this->roles;
 	}
 
-	public function setRoles(mixed $roles): Column
+	public function setRoles(string|array $roles): Column
 	{
 		$this->roles = $roles;
 
@@ -179,6 +180,18 @@ class Column
 	public function setViewType(?EntityColumnViewTypeEnum $viewType): Column
 	{
 		$this->viewType = $viewType;
+
+		return $this;
+	}
+
+	public function isIdentifier(): bool
+	{
+		return $this->primaryKey;
+	}
+
+	public function setIdentifier(bool $identifier): Column
+	{
+		$this->primaryKey = $identifier;
 
 		return $this;
 	}

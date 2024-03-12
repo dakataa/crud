@@ -11,6 +11,7 @@ use Dakataa\Crud\Attribute\EntityJoinColumn;
 use Dakataa\Crud\Attribute\EntityType;
 use Dakataa\Crud\Attribute\Enum\EntityColumnViewTypeEnum;
 use Dakataa\Crud\Attribute\SearchableOptions;
+use Dakataa\Crud\Serializer\Normalizer\ActionNormalizer;
 use Dakataa\Crud\Serializer\Normalizer\ColumnNormalizer;
 use Dakataa\Crud\Serializer\Normalizer\FormErrorNormalizer;
 use Dakataa\Crud\Serializer\Normalizer\FormViewNormalizer;
@@ -57,6 +58,8 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\Routing\RouterInterface;
+use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
+use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
 use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
 use Symfony\Component\Serializer\Normalizer\AbstractNormalizer;
@@ -102,7 +105,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		protected EntityManagerInterface $entityManager,
 		protected ParameterBagInterface $parameterBag,
 		protected ?Environment $twig = null,
-		protected ?SerializerInterface $serializer = null
+		protected ?SerializerInterface $serializer = null,
+		protected ?AuthorizationCheckerInterface $authorizationChecker = null
 	) {
 		$this->entity = $this->getAttribute(Entity::class);
 		$this->entityType = $this->getAttribute(EntityType::class);
@@ -225,10 +229,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		['items' => $items, 'meta' => $meta] = $paginator->paginate();
 
 		return [
-			'items' => array_map(fn(array|object $object) => [
-				'object' => is_object($object) ? $object : $object[0],
-				'data' => $this->compileEntityData($object, $viewType),
-			], iterator_to_array($items)),
+			'items' => array_map(fn(array|object $object) => $this->compileEntityData($object, $viewType), iterator_to_array($items)),
 			'meta' => $meta,
 		];
 	}
@@ -266,8 +267,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		$paginator = (new Paginator($query, $request->query->getInt('page', 1)))
 			->setMaxResults($this->prepareResultsLimit($request));
 
-		$request->attributes->set('_entityFQCN', $this->entity->fqcn);
-
 		return $this->response($request, [
 			'title' => $action?->title,
 			'columns' => iterator_to_array($this->getEntityColumns(searchable: false)),
@@ -277,6 +276,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				'batch' => $this->getBatchForm($request)->createView()
 			],
 			'sort' => $sorting,
+			'action' => $this->getMapActionToRoute()
 		], defaultTemplate: 'list');
 	}
 
@@ -379,7 +379,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	 * @throws Exception
 	 */
 	#[Route(path: '/{id}/view', requirements: ['id' => '\d+'])]
-	#[Action]
+	#[Action(object: true)]
 	public function view(Request $request, int $id, Action $action = null): ?Response
 	{
 		$queryBuilder = $this
@@ -410,7 +410,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	 * @throws Exception
 	 */
 	#[Route(path: '/{id}/edit', requirements: ['id' => '\d+'])]
-	#[Action]
+	#[Action(object: true)]
 	public function edit(Request $request, int $id = null, Action $action = null): ?Response
 	{
 		if (!$this->getEntityType()) {
@@ -605,6 +605,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 						new FormViewNormalizer(),
 						new BackedEnumNormalizer(),
 						new ColumnNormalizer(),
+						new ActionNormalizer(),
 						new DateTimeNormalizer([
 							DateTimeNormalizer::FORMAT_KEY => 'Y-m-d H:i:s',
 						]),
@@ -1052,6 +1053,17 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			$this->entity->columns = $columns;
 		}
 
+		// Add Identifier Columns (Primary Keys)
+		$columnFields = array_map(fn(Column $c) => $c->getField(), $this->entity->columns);
+		$identifierFields = $this->getEntityClassMetadata()->getIdentifierFieldNames();
+		$missingIdentifierFields = array_diff($identifierFields, $columnFields);
+		$addedIdentifierFields = array_intersect($columnFields, $identifierFields);
+
+		$this->entity->columns = array_map(fn(Column $c) => $c->setIdentifier(in_array($c->getField(), $addedIdentifierFields)), $this->entity->columns);
+		foreach ($missingIdentifierFields as $missingIdentifierField) {
+			$this->entity->columns[] = new Column($missingIdentifierField, identifier: true);
+		}
+
 		foreach (
 			array_filter(
 				$this->entity->columns,
@@ -1142,7 +1154,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 	protected function getMappedRoutes(): array
 	{
-		return [];
+		return $this->getMapActionToRoute();
 	}
 
 	protected function hasRoute(string $method): bool
@@ -1161,6 +1173,91 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			throw new NotFoundHttpException(sprintf('Missing Route "%s"', $method));
 		}
 
-		return $this::class.'::'.$method;
+		return static::class.'::'.$method;
+	}
+
+	public function getMapActionToRoute(): array
+	{
+		$entityFQCN = $this->getEntity()->fqcn;
+		$reflectionClass = new ReflectionClass($this->getControllerClass());
+
+		return array_reduce(
+			$reflectionClass->getMethods(),
+			function (array $result, ReflectionMethod $reflectionMethod) use ($reflectionClass, $entityFQCN) {
+				$actionAttributes = $reflectionMethod->getAttributes(Action::class);
+				if (empty($actionAttributes)) {
+					return $result;
+				}
+
+				return array_merge(
+					$result,
+					...
+					array_filter(
+						array_map(
+							function (ReflectionAttribute $actionRefAttribute) use (
+								$reflectionClass,
+								$reflectionMethod,
+								$entityFQCN
+							) {
+								/** @var \Symfony\Component\Routing\Attribute\Route|null $routeAttribute */
+								$routeAttribute = ($reflectionMethod->getAttributes(Route::class)[0] ?? null)?->newInstance();
+
+								/** @var IsGranted[] $isGrantedAttributes */
+								$isGrantedAttributes = array_map(
+									fn(ReflectionAttribute $refAttribute) => $refAttribute->newInstance(),
+									$reflectionMethod->getAttributes(IsGranted::class)
+								);
+
+								if ($entityFQCN) {
+									/** @var string[] $entityAttributesFQCN */
+									$entityAttributesFQCN = array_map(
+										fn(ReflectionAttribute $refAttribute) => $refAttribute->newInstance()->fqcn,
+										$reflectionMethod->getAttributes(Entity::class)
+									);
+
+									if (empty($entityAttributesFQCN)) {
+										$entityAttributesFQCN = array_map(
+											fn(ReflectionAttribute $refAttribute) => $refAttribute->newInstance()->fqcn,
+											$reflectionClass->getAttributes(Entity::class)
+										);
+									}
+
+									if (empty($entityAttributesFQCN) || !in_array($entityFQCN, $entityAttributesFQCN)) {
+										return null;
+									}
+								}
+
+								foreach ($isGrantedAttributes as $isGrantedAttribute) {
+									if (!$this->authorizationChecker->isGranted($isGrantedAttribute->attribute)) {
+										return null;
+									}
+								}
+
+								/** @var Action $actionInstance */
+								$actionInstance = $actionRefAttribute->newInstance();
+								$action = ($actionInstance->action ?: $reflectionMethod->name);
+								$title = ($actionInstance->action ?: ucfirst($reflectionMethod->name));
+								$route = $routeAttribute?->getName() ?: ($reflectionClass->name.'::'.$reflectionMethod->name);
+
+								$actionInstance
+									->setAction($action)
+									->setTitle($title)
+									->setRoute($route);
+
+								if (empty($reflectionMethod->getAttributes(EntityType::class)) && empty($reflectionClass->getAttributes(EntityType::class))) {
+									return null;
+								}
+
+								return [
+									$action => $actionInstance
+								];
+							},
+							$actionAttributes
+						)
+					)
+				);
+			},
+			[]
+		);
 	}
 }

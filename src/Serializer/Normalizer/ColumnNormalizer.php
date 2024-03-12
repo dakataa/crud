@@ -24,7 +24,8 @@ class ColumnNormalizer implements NormalizerInterface
 			'sortable' => $object->getSortable(),
 			'searchable' => $object->getSearchable() instanceof SearchableOptions ? [
 				'options' => $object->getSearchable()->getOptions()
-			] : $object->getSearchable()
+			] : $object->getSearchable(),
+			'identifier' => $object->isIdentifier(),
 		];
 	}
 

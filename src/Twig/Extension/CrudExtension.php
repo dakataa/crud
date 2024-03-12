@@ -51,22 +51,17 @@ class CrudExtension extends AbstractExtension
 		);
 	}
 
-	public function getRoute(string $method, string $fqcn = null)
+	public function getRoute(string $method, string $controllerFQCN = null)
 	{
-		$fqcn ??= $this->getControllerClass();
-		$mappedRoutes = $this->crudSubscriber->getMapActionToRoute($fqcn, $this->getEntityFQCN());
+		$controllerFQCN ??= $this->getControllerClass();
+		$mappedRoutes = $this->crudSubscriber->getController()?->getMapActionToRoute();
 
-		return $mappedRoutes[$method] ?? ($fqcn.'::'.$method);
+		return $mappedRoutes[$method]?->getRoute() ?? ($controllerFQCN.'::'.$method);
 	}
 
-	public function hasAction(): bool
+	public function hasAction(string $method): bool
 	{
-		$arguments = func_get_args();
-		$isClassPassed = class_exists($arguments[0]);
-		$class = $isClassPassed ? $arguments[0] : $this->getControllerClass();
-		$method = ($isClassPassed ? $arguments[1] : $arguments[0]);
-
-		$mappedRoutes = $this->crudSubscriber->getMapActionToRoute($class, $this->getEntityFQCN());
+		$mappedRoutes = $this->crudSubscriber->getController()?->getMapActionToRoute();
 
 		return isset($mappedRoutes[$method]);
 	}
@@ -89,11 +84,6 @@ class CrudExtension extends AbstractExtension
 	public function getControllerClass(): string
 	{
 		return explode('::', $this->requestStack->getMainRequest()->attributes->get('_controller'))[0];
-	}
-
-	public function getEntityFQCN(): ?string
-	{
-		return $this->requestStack->getMainRequest()->attributes->get('_entityFQCN');
 	}
 
 	public function getParameter(string $key): mixed

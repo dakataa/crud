@@ -124,14 +124,15 @@
                     <tbody>
                     {% if data.items|length %}
                         {% for row in data.items %}
+                            {% set identifier = 1 %}
                             <tr id="row_{{ loop.index }}">
                                 {% if form.batch.method is defined %}
                                     <td>
-                                        <input type="checkbox" class="ids" name="batch[ids][]" value="{{ entityPrimaryKey(row.object) }}"/>
+                                        <input type="checkbox" class="ids" name="batch[ids][]" value="{{ identifier }}"/>
                                     </td>
                                 {% endif %}
                                 {% for column in columns|filter(column => column.roles is empty or is_granted(column.roles)) %}
-                                    {% set value = row.data[column.field] ?? null %}
+                                    {% set value = row[column.field] ?? null %}
                                     {% set columnBlockKey = 'column_' ~ column.alias %}
                                     {% set columnValueBlockKey = 'column_' ~ column.alias ~ '_value' %}
                                     {% if (block(columnBlockKey) is defined) and (block(columnBlockKey) is not empty) %}
@@ -148,14 +149,14 @@
                                 {% endfor %}
                                 <td class="text-end">
                                     {% if hasAction('view') %}
-                                        <a href="{{ generatePath('view', {id: entityPrimaryKey(row.object)}) }}"
+                                        <a href="{{ generatePath('view', {id: identifier}) }}"
                                            class="btn btn-sm btn-secondary">
                                             <i class="fas fa-eye"></i>
                                             {{ 'View'|trans }}
                                         </a>
                                     {% endif %}
                                     {% if hasAction('edit') %}
-                                        <a href="{{ generatePath('edit', {id: entityPrimaryKey(row.object)}) }}"
+                                        <a href="{{ generatePath('edit', {id: identifier}) }}"
                                            class="btn btn-sm btn-outline-primary">
                                             <i class="fas fa-edit"></i>
                                             {{ 'Edit'|trans }}
@@ -163,7 +164,7 @@
                                     {% endif %}
                                     {% if hasAction('delete') %}
                                         <a onclick="return confirm('Are you sure?')"
-                                           href="{{ generatePath('delete', {id: entityPrimaryKey(row.object)}) }}"
+                                           href="{{ generatePath('delete', {id: identifier}) }}"
                                            class="btn btn-sm btn-outline-danger">
                                             <i class="fas fa-trash"></i>
                                             {{ 'Remove'|trans }}

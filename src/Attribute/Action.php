@@ -10,6 +10,8 @@ class Action
 	public function __construct(
 		public ?string $action = null,
 		public ?string $title = null,
+		public ?string $route = null,
+		public ?bool $object = false
 	) {
 	}
 
@@ -33,6 +35,30 @@ class Action
 	public function setTitle(?string $title): Action
 	{
 		$this->title = $title;
+
+		return $this;
+	}
+
+	public function getObject(): ?bool
+	{
+		return $this->object;
+	}
+
+	public function setObject(?bool $object): Action
+	{
+		$this->object = $object;
+
+		return $this;
+	}
+
+	public function getRoute(): ?string
+	{
+		return $this->route;
+	}
+
+	public function setRoute(?string $route): Action
+	{
+		$this->route = $route;
 
 		return $this;
 	}

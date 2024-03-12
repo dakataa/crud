@@ -4,19 +4,15 @@ namespace Dakataa\Crud\EventSubscriber;
 
 use Dakataa\Crud\Attribute\Action;
 use Dakataa\Crud\Attribute\Entity;
-use Dakataa\Crud\Attribute\EntityType;
 use Dakataa\Crud\Controller\AbstractCrudController;
 use Doctrine\ORM\EntityManagerInterface;
 use ReflectionAttribute;
-use ReflectionClass;
-use ReflectionMethod;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Form\FormFactoryInterface;
 use Symfony\Component\HttpKernel\Event\ControllerEvent;
 use Symfony\Component\HttpKernel\Exception\HttpException;
-use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Routing\RouterInterface;
 use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
@@ -36,6 +32,8 @@ class CrudSubscriber
 	) {
 	}
 
+	private ?AbstractCrudController $controller = null;
+
 	#[AsEventListener]
 	public function onKernelController(ControllerEvent $event): void
 	{
@@ -46,13 +44,14 @@ class CrudSubscriber
 		[$controllerObject, $method] = $event->getController();
 
 		if (is_a($controllerObject, AbstractCrudController::class, true)) {
+			$this->controller = $controllerObject;
 			return;
 		}
 
 		/** @var Action $action */
 		$action = array_shift($actions);
 		$parent = $this;
-		$controller = new class (
+		$this->controller = new class (
 			$this,
 			$event,
 			$this->formFactory,
@@ -60,7 +59,8 @@ class CrudSubscriber
 			$this->dispatcher,
 			$this->entityManager,
 			$this->parameterBag,
-			$this->twig
+			$this->twig,
+			$this->authorizationChecker
 		) extends AbstractCrudController {
 
 			protected string $originClassName;
@@ -73,11 +73,12 @@ class CrudSubscriber
 				EventDispatcherInterface $dispatcher,
 				EntityManagerInterface $entityManager,
 				ParameterBagInterface $parameterBag,
-				?Environment $twig = null
+				?Environment $twig = null,
+				?AuthorizationCheckerInterface $authorizationChecker = null
 			) {
 				$this->originClassName = get_class($this->controllerEvent->getController()[0]);
 
-				parent::__construct($formFactory, $router, $dispatcher, $entityManager, $parameterBag, $twig);
+				parent::__construct($formFactory, $router, $dispatcher, $entityManager, $parameterBag, $twig, authorizationChecker: $authorizationChecker);
 			}
 
 			protected function getControllerClass(): string
@@ -88,14 +89,6 @@ class CrudSubscriber
 			protected function getAttributes(string $attributeClass): array
 			{
 				return $this->crudSubscriber->getAttributes($this->controllerEvent, $attributeClass);
-			}
-
-			public function getMappedRoutes(): array
-			{
-				return $this->crudSubscriber->getMapActionToRoute(
-					$this->getControllerClass(),
-					$this->getEntity()?->fqcn
-				);
 			}
 		};
 
@@ -118,13 +111,11 @@ class CrudSubscriber
 			}
 		}
 
-		$event->getRequest()->attributes->set(
-			'_entityFQCN',
-			($this->getAttributes($event, Entity::class)[0] ?? null)?->fqcn
-		);
-//		$event->getRequest()->attributes->set('action', (clone $action)->setAction($method));
+		if(!method_exists($this->controller, $action->action)) {
+			return;
+		}
 
-		$event->setController([$controller, $action->action]);
+		$event->setController([$this->controller, $action->action]);
 	}
 
 	public function getAttributes(ControllerEvent $controllerEvent, string $attributeClass): array
@@ -143,86 +134,9 @@ class CrudSubscriber
 		return array_reverse($controllerEvent->getAttributes($attributeClass));
 	}
 
-	public function getMapActionToRoute(string $controllerFQCN, string $entityFQCN = null): array
+	public function getController(): ?AbstractCrudController
 	{
-		$reflectionClass = new ReflectionClass($controllerFQCN);
-
-		return array_reduce(
-			$reflectionClass->getMethods(),
-			function (array $result, ReflectionMethod $reflectionMethod) use ($reflectionClass, $entityFQCN) {
-				$actionAttributes = $reflectionMethod->getAttributes(Action::class);
-				if (empty($actionAttributes)) {
-					return $result;
-				}
-
-				return array_merge(
-					$result,
-					...
-					array_filter(
-						array_map(
-							function (ReflectionAttribute $actionRefAttribute) use (
-								$reflectionClass,
-								$reflectionMethod,
-								$entityFQCN
-							) {
-								/** @var Route|null $routeAttribute */
-								$routeAttribute = ($reflectionMethod->getAttributes(
-									Route::class
-								)[0] ?? null)?->newInstance();
-
-								/** @var IsGranted[] $isGrantedAttributes */
-								$isGrantedAttributes = array_map(
-									fn(ReflectionAttribute $refAttribute) => $refAttribute->newInstance(),
-									$reflectionMethod->getAttributes(IsGranted::class)
-								);
-
-								if ($entityFQCN) {
-									/** @var string[] $entityAttributesFQCN */
-									$entityAttributesFQCN = array_map(
-										fn(ReflectionAttribute $refAttribute) => $refAttribute->newInstance()->fqcn,
-										$reflectionMethod->getAttributes(Entity::class)
-									);
-
-									if (empty($entityAttributesFQCN)) {
-										$entityAttributesFQCN = array_map(
-											fn(ReflectionAttribute $refAttribute) => $refAttribute->newInstance()->fqcn,
-											$reflectionClass->getAttributes(Entity::class)
-										);
-									}
-
-									if (empty($entityAttributesFQCN) || !in_array($entityFQCN, $entityAttributesFQCN)) {
-										return null;
-									}
-								}
-
-								foreach ($isGrantedAttributes as $isGrantedAttribute) {
-									if (!$this->authorizationChecker->isGranted($isGrantedAttribute->attribute)) {
-										return null;
-									}
-								}
-
-								$action = ($actionRefAttribute->newInstance()->action ?: $reflectionMethod->name);
-								$route = $routeAttribute?->getName(
-								) ?: ($reflectionClass->name.'::'.$reflectionMethod->name);
-
-								if (empty(
-									$reflectionMethod->getAttributes(
-										EntityType::class
-									)
-									) && empty($reflectionClass->getAttributes(EntityType::class))) {
-									return null;
-								}
-
-								return [
-									$action => $route,
-								];
-							},
-							$actionAttributes
-						)
-					)
-				);
-			},
-			[]
-		);
+		return $this->controller;
 	}
+
 }
