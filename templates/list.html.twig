@@ -124,11 +124,12 @@
                     <tbody>
                     {% if data.items|length %}
                         {% for row in data.items %}
-                            {% set identifier = 1 %}
+                            {% set identifierField = (columns|filter(c => c.identifier)|first).field %}
+                            {% set rowIdentifier = row[identifierField] %}
                             <tr id="row_{{ loop.index }}">
                                 {% if form.batch.method is defined %}
                                     <td>
-                                        <input type="checkbox" class="ids" name="batch[ids][]" value="{{ identifier }}"/>
+                                        <input type="checkbox" class="ids" name="batch[ids][]" value="{{ rowIdentifier }}"/>
                                     </td>
                                 {% endif %}
                                 {% for column in columns|filter(column => column.roles is empty or is_granted(column.roles)) %}
@@ -149,14 +150,14 @@
                                 {% endfor %}
                                 <td class="text-end">
                                     {% if hasAction('view') %}
-                                        <a href="{{ generatePath('view', {id: identifier}) }}"
+                                        <a href="{{ generatePath('view', {id: rowIdentifier}) }}"
                                            class="btn btn-sm btn-secondary">
                                             <i class="fas fa-eye"></i>
                                             {{ 'View'|trans }}
                                         </a>
                                     {% endif %}
                                     {% if hasAction('edit') %}
-                                        <a href="{{ generatePath('edit', {id: identifier}) }}"
+                                        <a href="{{ generatePath('edit', {id: rowIdentifier}) }}"
                                            class="btn btn-sm btn-outline-primary">
                                             <i class="fas fa-edit"></i>
                                             {{ 'Edit'|trans }}
@@ -164,7 +165,7 @@
                                     {% endif %}
                                     {% if hasAction('delete') %}
                                         <a onclick="return confirm('Are you sure?')"
-                                           href="{{ generatePath('delete', {id: identifier}) }}"
+                                           href="{{ generatePath('delete', {id: rowIdentifier}) }}"
                                            class="btn btn-sm btn-outline-danger">
                                             <i class="fas fa-trash"></i>
                                             {{ 'Remove'|trans }}
