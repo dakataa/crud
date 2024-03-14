@@ -104,8 +104,8 @@
                             {% block columnHeaderBlock %}
                                 <th>
                                     {{- column.label|trans -}}
-                                    {% if column.sortable and attribute(sort, column.alias) is defined %}
-                                        {% set currentSortType = attribute(sort, column.alias)|default(null) %}
+                                    {% if column.sortable and attribute(sort, column.field) is defined %}
+                                        {% set currentSortType = attribute(sort, column.field)|default(null) %}
                                         {% set nextSortType = (currentSortType ? (currentSortType == 'ASC' ? 'DESC' : null) : 'ASC') %}
                                         <a href="{{ generatePath('list', { sort: (sort|default({}))|merge({(column.field): (nextSortType|default('')) }) }) }}">
                                             {% if (currentSortType) %}

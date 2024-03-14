@@ -256,6 +256,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		$this->setFilters($request, $filterForm->isValid() ? $filterData : []);
 
 		$sorting = $this->prepareSorting($request);
+
 		$query = $this
 			->getEntityRepository()
 			->createQueryBuilder(self::ENTITY_ROOT_ALIAS);
@@ -472,7 +473,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				if ($request->getPreferredFormat() === 'html') {
 					return new RedirectResponse(
 						$this->router->generate($this->getRoute('edit'), [
-							'id' => $this->getEntityClassMetadata()->getIdentifierValues($form->getData())[$entityClassIdentifierFieldName] ?? null,
+							'id' => $this->getEntityClassMetadata()->getIdentifierValues(
+									$form->getData()
+								)[$entityClassIdentifierFieldName] ?? null,
 						])
 					);
 				}
@@ -488,7 +491,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	}
 
 	#[Route(path: '/{id}/delete', requirements: ['id' => '\d+'])]
-	#[Action]
+	#[Action(object: true)]
 	public function delete(Request $request, int $id): Response
 	{
 		$object = $this->getEntityRepository()->find($id);
@@ -779,22 +782,22 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 	protected function prepareSorting(Request $request = null, bool $update = true): array
 	{
-		if ($request->query->has('sort')) {
-			$sorting = $request->query->all('sort', []);
-		} else {
-			$sorting = $request->getSession()->get($this->getAlias().'.sort', $this->getDefaultSort() ?: []);
-		}
+		$sorting = $request->query->all('sort') ?: $request->getSession()->get($this->getAlias().'.sort', $this->getDefaultSort() ?: []);
+		$sorting = array_filter($sorting, fn($v) => in_array(strtoupper($v), ['ASC', 'DESC']));
 
 		$buildedColumns = array_reduce(
-			array_filter(iterator_to_array($this->buildColumns()), fn(array $c) => $c['column']->getSortable() !== false
+			array_filter(
+				iterator_to_array($this->buildColumns()),
+				fn(array $c) => $c['column']->getSortable() !== false
 			),
 			fn(array $c, array $item) => [...$c, $item['column']->getField() => $item],
 			[]
 		);
-		$sorting = array_intersect_key($sorting, $buildedColumns) + array_fill_keys(array_keys($buildedColumns), null);
 
+		$sorting = array_intersect_key($sorting, $buildedColumns) + array_fill_keys(array_keys($buildedColumns), null);
 		$request->getSession()->set($this->getAlias().'.sort', $sorting);
 
+		return $sorting;
 		return array_reduce(
 			array_keys($sorting),
 			fn(array $c, string $field) => [...$c, $buildedColumns[$field]['column']->getAlias() => $sorting[$field]],
@@ -946,14 +949,16 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 		$filters = array_filter($this->getFilters($request), fn(mixed $value) => $value !== null && $value !== '');
 
-		foreach (
-			$this->buildColumns($viewType) as ['entityAlias' => $entityAlias,
-			'entityField' => $entityField,
-			'assotiations' => $assotiations,
-			'type' => $type,
-			'column' => $column,
-			'canSelect' => $canSelect,]
-		) {
+		$sortingFields = array_filter($this->prepareSorting($request, false));
+
+		foreach ($this->buildColumns($viewType) as [
+				'entityAlias' => $entityAlias,
+				'entityField' => $entityField,
+				'assotiations' => $assotiations,
+				'type' => $type,
+				'column' => $column,
+				'canSelect' => $canSelect,
+		]) {
 			$hasFilterApplied = isset($filters[$column->getAlias()]) && false !== $column->getSearchable();
 
 			if ($canSelect || $hasFilterApplied) {
@@ -975,8 +980,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 			if ($hasFilterApplied) {
 				$value = $filters[$column->getAlias()];
-				$type = ($column->getSearchable() instanceof SearchableOptions ? $column->getSearchable()->getType(
-				) : null) ?? $type ?? Types::STRING;
+				$type = ($column->getSearchable() instanceof SearchableOptions ? $column->getSearchable()->getType() : null) ?? $type ?? Types::STRING;
 				$parameter = sprintf('p%s', $column->getAlias());
 
 				switch ($type) {
@@ -1023,10 +1027,10 @@ abstract class AbstractCrudController implements CrudControllerInterface
 					}
 				}
 			}
-		}
 
-		foreach (array_filter($this->prepareSorting($request, false)) as $sortField => $value) {
-			$query->addOrderBy($sortField, $value);
+			if(array_key_exists($column->getField(), $sortingFields)) {
+				$query->addOrderBy($column->getAlias(), $sortingFields[$column->getField()]);
+			}
 		}
 
 		return $this;
@@ -1250,6 +1254,10 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 								return [
 									$action => $actionInstance
+								];
+
+								return [
+									$action => $actionInstance,
 								];
 							},
 							$actionAttributes
