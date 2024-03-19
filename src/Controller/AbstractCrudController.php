@@ -269,7 +269,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			->setMaxResults($this->prepareResultsLimit($request));
 
 		return $this->response($request, [
-			'title' => $action?->title,
+			'title' => $action?->title ?: $this->titlize($this->getEntityShortName()),
 			'columns' => iterator_to_array($this->getEntityColumns(searchable: false)),
 			'data' => $this->prepareListData($paginator),
 			'form' => [
@@ -1240,7 +1240,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 								/** @var Action $actionInstance */
 								$actionInstance = $actionRefAttribute->newInstance();
 								$action = ($actionInstance->action ?: $reflectionMethod->name);
-								$title = ($actionInstance->action ?: ucfirst($reflectionMethod->name));
+								$title = ($actionInstance->action ?: $this->titlize(ucfirst($reflectionMethod->name)));
 								$route = $routeAttribute?->getName() ?: ($reflectionClass->name.'::'.$reflectionMethod->name);
 
 								$actionInstance
@@ -1267,5 +1267,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			},
 			[]
 		);
+	}
+
+	protected function titlize(string $value): string {
+		return preg_replace(['/([A-Z]+)([A-Z][a-z])/', '/([a-z\d])([A-Z])/'], ['\\1 \\2', '\\1 \\2'], $value);
 	}
 }
