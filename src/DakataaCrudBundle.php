@@ -2,21 +2,18 @@
 
 namespace Dakataa\Crud;
 
-use Dakataa\Crud\EventSubscriber\CrudSubscriber;
-use ReflectionClass;
 use Dakataa\Crud\Attribute\Navigation\NavigationGroup;
 use Dakataa\Crud\Attribute\Navigation\NavigationItem;
+use Dakataa\Crud\EventSubscriber\CrudSubscriber;
 use Dakataa\Crud\Service\Navigation;
 use Dakataa\Crud\Twig\Extension\CrudExtension;
 use Dakataa\Crud\Twig\Extension\NavigationExtension;
-use Symfony\Component\Config\Definition\Builder\TreeBuilder;
+use ReflectionClass;
 use Symfony\Component\Config\Definition\Configurator\DefinitionConfigurator;
 use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
-use Symfony\Component\Form\FormFactoryInterface;
 use Symfony\Component\HttpKernel\Bundle\AbstractBundle;
-use Symfony\Component\HttpKernel\Bundle\Bundle;
 
 class DakataaCrudBundle extends AbstractBundle
 {
@@ -44,20 +41,20 @@ class DakataaCrudBundle extends AbstractBundle
 			->services()
 			->set(NavigationExtension::class, NavigationExtension::class)
 			->tag('twig.extension')
-			->autowire(true);
+			->autowire();
 
 		$container
 			->services()
 			->set(Navigation::class, Navigation::class)
-			->autowire(true)
-			->autoconfigure(true);
+			->autowire()
+			->autoconfigure();
 
 		$container
 			->services()
 			->set(CrudSubscriber::class, CrudSubscriber::class)
 			->tag('controller.service_arguments')
-			->autowire(true)
-			->autoconfigure(true)
+			->autowire()
+			->autoconfigure()
 		;
 
 		$container->parameters()->set(self::NAME, $config);
@@ -86,10 +83,10 @@ class DakataaCrudBundle extends AbstractBundle
 	}
 
 	public function prependExtension(
-		ContainerConfigurator $containerConfigurator,
-		ContainerBuilder $containerBuilder
+		ContainerConfigurator $container,
+		ContainerBuilder $builder
 	): void {
-		$containerBuilder->prependExtensionConfig('webpack_encore', [
+		$builder->prependExtensionConfig('webpack_encore', [
 			'builds' => [
 				self::NAME => '%kernel.project_dir%/public/bundles/dakataacrud/assets',
 			],
