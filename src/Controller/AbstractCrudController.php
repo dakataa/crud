@@ -9,7 +9,7 @@ use Dakataa\Crud\Attribute\Entity;
 use Dakataa\Crud\Attribute\EntityGroup;
 use Dakataa\Crud\Attribute\EntityJoinColumn;
 use Dakataa\Crud\Attribute\EntityType;
-use Dakataa\Crud\Attribute\Enum\EntityColumnViewTypeEnum;
+use Dakataa\Crud\Attribute\Enum\EntityColumnViewGroupEnum;
 use Dakataa\Crud\Attribute\SearchableOptions;
 use Dakataa\Crud\Serializer\Normalizer\ActionNormalizer;
 use Dakataa\Crud\Serializer\Normalizer\ColumnNormalizer;
@@ -21,6 +21,7 @@ use DateTimeInterface;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Mapping\MappingException;
 use Doctrine\ORM\Query\Expr\Join;
 use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\Mapping\ClassMetadata;
@@ -46,7 +47,6 @@ use Symfony\Component\Form\Extension\Core\Type\CollectionType;
 use Symfony\Component\Form\Extension\Core\Type\DateType;
 use Symfony\Component\Form\Extension\Core\Type\FormType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
-use Symfony\Component\Form\Form;
 use Symfony\Component\Form\FormFactoryInterface;
 use Symfony\Component\Form\FormInterface;
 use Symfony\Component\Form\FormTypeInterface;
@@ -146,7 +146,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 	protected function compileEntityData(
 		array|object $object,
-		EntityColumnViewTypeEnum $viewType = null,
+		EntityColumnViewGroupEnum|string $viewGroup = null,
 		bool $raw = false
 	): array {
 		$additionalEntityFields = [];
@@ -164,7 +164,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 
 		$result = [];
-		foreach ($this->getEntityColumns($viewType) as $column) {
+		foreach ($this->getEntityColumns($viewGroup) as $column) {
 			$field = $column->getAlias();
 
 			$value = null;
@@ -224,12 +224,12 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return $result;
 	}
 
-	protected function prepareListData(Paginator $paginator, EntityColumnViewTypeEnum $viewType = null): array
+	protected function prepareListData(Paginator $paginator, EntityColumnViewGroupEnum|string $viewGroup = null): array
 	{
 		['items' => $items, 'meta' => $meta] = $paginator->paginate();
 
 		return [
-			'items' => array_map(fn(array|object $object) => $this->compileEntityData($object, $viewType), iterator_to_array($items)),
+			'items' => array_map(fn(array|object $object) => $this->compileEntityData($object, $viewGroup), iterator_to_array($items)),
 			'meta' => $meta,
 		];
 	}
@@ -311,7 +311,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 		$query = $this->getEntityRepository()->createQueryBuilder('a');
 		$this
-			->buildQuery($request, $query, EntityColumnViewTypeEnum::Export)
+			->buildQuery($request, $query, EntityColumnViewGroupEnum::Export)
 			->buildCustomQuery($request, $query);
 
 		$objects = $query->getQuery()->getResult();
@@ -328,14 +328,14 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		//Header
 		$header = [];
 		/** @var Column $column */
-		foreach ($this->buildColumns(EntityColumnViewTypeEnum::Export) as ['column' => $column]) {
+		foreach ($this->buildColumns(EntityColumnViewGroupEnum::Export) as ['column' => $column]) {
 			$header[] = $column->getLabel();
 		}
 		$rows = [$header];
 
 		//Rows
 		foreach ($objects as $object) {
-			$rows[] = $this->compileEntityData($object, EntityColumnViewTypeEnum::Export);
+			$rows[] = $this->compileEntityData($object, EntityColumnViewGroupEnum::Export);
 		}
 
 		try {
@@ -403,7 +403,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return $this->response($request, [
 			'object' => $object,
 			'data' => $this->compileEntityData($object),
-			'columns' => $this->getEntityColumns(EntityColumnViewTypeEnum::View),
+			'columns' => $this->getEntityColumns(EntityColumnViewGroupEnum::View),
 		], defaultTemplate: 'view');
 	}
 
@@ -502,7 +502,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return new RedirectResponse($this->router->generate($this->getRoute('list'), $request->query->all()));
 	}
 
-	protected function handleBatch(Request $request): Response|Form
+	protected function handleBatch(Request $request): Response|FormInterface
 	{
 		$form = $this->getBatchForm($request);
 
@@ -624,7 +624,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 						AbstractNormalizer::CIRCULAR_REFERENCE_HANDLER => fn() => null,
 					]), $status
 				);
-				break;
 			}
 			default:
 				return new Response(
@@ -780,29 +779,23 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return null;
 	}
 
-	protected function prepareSorting(Request $request = null, bool $update = true): array
+	protected function prepareSorting(Request $request = null, EntityColumnViewGroupEnum|string $viewGroup = null): array
 	{
 		$sorting = $request->query->all('sort') ?: $request->getSession()->get($this->getAlias().'.sort', $this->getDefaultSort() ?: []);
 		$sorting = array_filter($sorting, fn($v) => in_array(strtoupper($v), ['ASC', 'DESC']));
-
-		$buildedColumns = array_reduce(
+		$columns = array_reduce(
 			array_filter(
-				iterator_to_array($this->buildColumns()),
+				iterator_to_array($this->buildColumns($viewGroup)),
 				fn(array $c) => $c['column']->getSortable() !== false
 			),
 			fn(array $c, array $item) => [...$c, $item['column']->getField() => $item],
 			[]
 		);
 
-		$sorting = array_intersect_key($sorting, $buildedColumns) + array_fill_keys(array_keys($buildedColumns), null);
+		$sorting = array_intersect_key($sorting, $columns) + array_fill_keys(array_keys($columns), null);
 		$request->getSession()->set($this->getAlias().'.sort', $sorting);
 
 		return $sorting;
-		return array_reduce(
-			array_keys($sorting),
-			fn(array $c, string $field) => [...$c, $buildedColumns[$field]['column']->getAlias() => $sorting[$field]],
-			[]
-		);
 	}
 
 	public function prepareResultsLimit(Request $request): int
@@ -838,24 +831,20 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return $this;
 	}
 
-	protected function getFilterValue(Request $request, string $key): mixed
-	{
-		return $this->getFilters($request)[$key] ?? null;
-	}
-
 
 	protected function buildCustomQuery(Request $request, QueryBuilder $query): self
 	{
 		return $this;
 	}
 
-	private function buildColumns(EntityColumnViewTypeEnum $viewType = null, bool $searchable = false): Generator
+	private function buildColumns(EntityColumnViewGroupEnum|string $viewGroup = null, bool $searchable = false): Generator
 	{
 		$rootEntityMetadata = $this->entityManager->getClassMetadata($this->getEntity()->getFqcn());
-		$buildColumn = function (string $fieldName, Column $column) use ($rootEntityMetadata): array|false {
+		$buildColumn = function (Column $column) use ($rootEntityMetadata): array|false {
+			$fieldName = $column->getField();
 			$entityMetadata = $rootEntityMetadata;
 			$entityAlias = self::ENTITY_ROOT_ALIAS;
-			$assotiations = [];
+			$relations = [];
 
 			if (str_contains($fieldName, '.')) {
 				$entityRelations = explode('.', $fieldName);
@@ -871,7 +860,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 					$rootAlias = $entityAlias;
 					$entityAlias = $entityAlias.Container::camelize($entityRelation);
-					$assotiations[] = [
+					$relations[] = [
 						'entity' => lcfirst($rootAlias ?: self::ENTITY_ROOT_ALIAS),
 						'field' => $entityRelation,
 						'alias' => lcfirst($entityAlias),
@@ -889,23 +878,20 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				'fqcn' => $entityMetadata->getReflectionClass()->name,
 				'entityAlias' => lcfirst($entityAlias),
 				'entityField' => $fieldName,
-				'assotiations' => $assotiations,
+				'relations' => $relations,
 				'type' => $entityMetadata->getTypeOfField($fieldName),
 				'column' => $column,
-				'canSelect' => $entityMetadata->hasField($fieldName) && false === $entityMetadata->hasAssociation(
-						$fieldName
-					),
+				'canSelect' => $entityMetadata->hasField($fieldName) && false === $entityMetadata->hasAssociation($fieldName),
 			];
 		};
 
-		foreach ($this->getEntityColumns($viewType, $searchable) as $column) {
-			if (false !== $columnData = $buildColumn($column->getField(), $column)) {
+		foreach ($this->getEntityColumns($viewGroup, $searchable) as $column) {
+			if (false !== $columnData = $buildColumn($column)) {
 				yield $columnData;
 			}
 
 			if ((($searchableField = $column->getSearchable()) instanceof SearchableOptions)) {
 				if ($searchableField->getField() && false !== $columnData = $buildColumn(
-						$searchableField->getField(),
 						new Column($searchableField->getField(), searchable: $searchableField, sortable: false)
 					)) {
 					yield $columnData;
@@ -920,7 +906,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	protected function buildQuery(
 		Request $request,
 		QueryBuilder $query,
-		EntityColumnViewTypeEnum $viewType = EntityColumnViewTypeEnum::List
+		EntityColumnViewGroupEnum|string $viewGroup = EntityColumnViewGroupEnum::List
 	): self {
 		$entity = $this->getEntity();
 		foreach (($entity->joins ?? []) as $join) {
@@ -935,35 +921,32 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			);
 		}
 
-		if ($entity->group) {
-			foreach ($entity->group ?? [] as $group) {
-				$groupByField = (str_contains($group->field, '.') ? $group->field : sprintf(
-					'%s.%s',
-					self::ENTITY_ROOT_ALIAS,
-					$group->field
-				));
+		foreach ($entity->group ?? [] as $group) {
+			$groupByField = (str_contains($group->field, '.') ? $group->field : sprintf(
+				'%s.%s',
+				self::ENTITY_ROOT_ALIAS,
+				$group->field
+			));
 
-				$query->groupBy($groupByField);
-			}
+			$query->groupBy($groupByField);
 		}
 
 		$filters = array_filter($this->getFilters($request), fn(mixed $value) => $value !== null && $value !== '');
+		$sortingFields = array_filter($this->prepareSorting($request, $viewGroup));
 
-		$sortingFields = array_filter($this->prepareSorting($request, false));
-
-		foreach ($this->buildColumns($viewType) as [
-				'entityAlias' => $entityAlias,
-				'entityField' => $entityField,
-				'assotiations' => $assotiations,
-				'type' => $type,
-				'column' => $column,
-				'canSelect' => $canSelect,
+		foreach ($this->buildColumns($viewGroup) as [
+		         'entityAlias' => $entityAlias,
+		         'entityField' => $entityField,
+		         'relations' => $relations,
+		         'type' => $type,
+		         'column' => $column,
+		         'canSelect' => $canSelect,
 		]) {
 			$hasFilterApplied = isset($filters[$column->getAlias()]) && false !== $column->getSearchable();
 
 			if ($canSelect || $hasFilterApplied) {
-				foreach ($assotiations as $assotiation) {
-					$query->innerJoin($assotiation['entity'].'.'.$assotiation['field'], $assotiation['alias']);
+				foreach ($relations as $relation) {
+					$query->innerJoin($relation['entity'].'.'.$relation['field'], $relation['alias']);
 				}
 			}
 
@@ -1036,44 +1019,43 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return $this;
 	}
 
-	/**
-	 * @param EntityColumnViewTypeEnum|null $viewType
-	 * @return Column[]
-	 * @throws Exception
-	 *
-	 */
-	public function getEntityColumns(EntityColumnViewTypeEnum $viewType = null, bool $searchable = false): Generator
-	{
-		if (empty($this->entity->columns)) {
-			$columns = [];
-			foreach (
-				$this->entityManager->getClassMetadata($this->getEntity()->getFqcn())->getFieldNames() as $fieldName
-			) {
-				if ($entityColumn = $this->getEntityFieldMetadata($fieldName)) {
-					$columns[] = new Column($fieldName);
-				}
-			}
-
-			$this->entity->columns = $columns;
+	public function getEntityPrimaryColumn(): Column {
+		$identifierFields = $this->getEntityClassMetadata()->getIdentifierFieldNames();
+		foreach ($identifierFields as $identifierField) {
+			return new Column($identifierField, group: false, identifier: true);
 		}
 
-		// Add Identifier Columns (Primary Keys)
-		$columnFields = array_map(fn(Column $c) => $c->getField(), $this->entity->columns);
-		$identifierFields = $this->getEntityClassMetadata()->getIdentifierFieldNames();
-		$missingIdentifierFields = array_diff($identifierFields, $columnFields);
-		$addedIdentifierFields = array_intersect($columnFields, $identifierFields);
+		throw new Exception('No Primary Key found.');
+	}
 
-		$this->entity->columns = array_map(fn(Column $c) => $c->setIdentifier(in_array($c->getField(), $addedIdentifierFields)), $this->entity->columns);
-		foreach ($missingIdentifierFields as $missingIdentifierField) {
-			$this->entity->columns[] = new Column($missingIdentifierField, identifier: true);
+	/**
+	 * @param EntityColumnViewGroupEnum|string|false|null $viewGroup
+	 * @param bool $searchable
+	 * @return Generator
+	 * @throws Exception
+	 */
+	public function getEntityColumns(EntityColumnViewGroupEnum|string|false $viewGroup = null, bool $searchable = false): Generator
+	{
+		$viewGroup = (is_string($viewGroup) ? EntityColumnViewGroupEnum::tryFrom($viewGroup) : null) ?: $viewGroup;
+
+		if (empty($this->entity->columns)) {
+			$this->entity->columns = array_map(fn(string $fieldName) => new Column($fieldName), $this->entityManager->getClassMetadata($this->getEntity()->getFqcn())->getFieldNames());
+		}
+
+		$identifierFields = $this->getEntityClassMetadata()->getIdentifierFieldNames();
+
+		array_map(fn($column) => $column->setIdentifier(in_array($column->getField(), $identifierFields)), $this->entity->columns);
+		$hasIdentifier = array_reduce($this->entity->columns, fn(bool $hasIdentifier, Column $c) => $hasIdentifier || in_array($c->getField(), $identifierFields), false);
+		if(!$hasIdentifier) {
+			$this->entity->columns[] = $this->getEntityPrimaryColumn();
 		}
 
 		foreach (
 			array_filter(
 				$this->entity->columns,
-				fn(Column $c) => (
-						null === $c->getViewType() ||
-						$c->getViewType() === $viewType
+				fn(Column $c) =>
+					(
+						!$c->getGroup() || $c->getGroup() === $viewGroup
 					)
 					&&
 					(
@@ -1097,8 +1079,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	}
 
 	/**
-	 * @param $field
-	 * @throws Exception
+	 * @param string $field
+	 * @return array|null
+	 * @throws MappingException
 	 */
 	public function getEntityFieldMetadata(string $field): ?array
 	{
@@ -1254,10 +1237,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 								return [
 									$action => $actionInstance
-								];
-
-								return [
-									$action => $actionInstance,
 								];
 							},
 							$actionAttributes

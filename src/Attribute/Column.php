@@ -3,7 +3,7 @@
 namespace Dakataa\Crud\Attribute;
 
 use Attribute;
-use Dakataa\Crud\Attribute\Enum\EntityColumnViewTypeEnum;
+use Dakataa\Crud\Attribute\Enum\EntityColumnViewGroupEnum;
 use Dakataa\Crud\Enum\SortTypeEnum;
 use Stringable;
 use Symfony\Component\DependencyInjection\Container;
@@ -18,7 +18,7 @@ class Column
 		protected ?string $placeholder = null,
 		protected ?array $enum = null,
 		protected bool $raw = false,
-		protected ?EntityColumnViewTypeEnum $viewType = null,
+		protected EntityColumnViewGroupEnum|string|null|false $group = null,
 		protected int|float|string|Stringable|null $value = null,
 		protected SearchableOptions|bool|null $searchable = null,
 		protected bool|SortTypeEnum $sortable = true,
@@ -172,26 +172,26 @@ class Column
 		return $this;
 	}
 
-	public function getViewType(): ?EntityColumnViewTypeEnum
+	public function getGroup(): EntityColumnViewGroupEnum|string|null|false
 	{
-		return $this->viewType;
+		return (is_string($this->group) ? EntityColumnViewGroupEnum::tryFrom($this->group) : null) ?: $this->group;
 	}
 
-	public function setViewType(?EntityColumnViewTypeEnum $viewType): Column
+	public function setGroup(?EntityColumnViewGroupEnum $group): Column
 	{
-		$this->viewType = $viewType;
+		$this->group = $group;
 
 		return $this;
 	}
 
 	public function isIdentifier(): bool
 	{
-		return $this->primaryKey;
+		return $this->identifier;
 	}
 
-	public function setIdentifier(bool $identifier): Column
+	public function setIdentifier(bool $v): Column
 	{
-		$this->primaryKey = $identifier;
+		$this->identifier = $v;
 
 		return $this;
 	}
