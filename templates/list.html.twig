@@ -32,8 +32,7 @@
 {% endmacro %}
 
 {% set hasFilters = form.filter.vars.data|default([])|filter(v => v is not null)|length %}
-{% set identifierField = (columns|filter(c => c.identifier)|first).field ?? false %}
-{% set viewColumns = columns|filter(column => column.group is null or column.group) %}
+{% set identifierField = entity.primaryColumn %}
 {% block body %}
     <div class="list">
         <div class="content-header d-md-flex mb-3 justify-content-between align-items-center">
@@ -43,18 +42,14 @@
                 {% endblock %}
             </h2>
             <div class="btn-group btn-group-sm">
-                {% block actions %}
-                    {% if hasAction('add') %}
-                        <a href="{{ generatePath('add') }}" class="btn btn-success">
-                            <i class="fas fa-plus"></i> {{ 'Add'|trans }}
-                        </a>
-                    {% endif %}
-                {% endblock %}
-                {% if hasAction('export') %}
-                    <a href="{{ generatePath('export') }}" class="btn btn-outline-secondary">
-                        <i class="fas fa-download"></i> {{ 'Export'|trans }}
+                {% for action in action|filter(a => false == a.object) %}
+                    <a href="{{ generatePath(action.action) }}"
+                       class="btn btn-sm btn-outside-secondary">
+                        <i class="fas fa-eye"></i>
+                        {{ action.title|trans }}
                     </a>
-                {% endif %}
+                {% endfor %}
+
                 {% if form.filter %}
                     <div class="btn-group btn-group-sm">
                         <button type="button" class="btn btn-outline-secondary dropdown-toggle"
@@ -91,7 +86,7 @@
                 {{ _self.filterList(form.filter) }}
             </div>
         {% endif %}
-        {% if data.items|length %}
+        {% if entity.data.items|length %}
             <div class="table-responsive">
                 <table class="table table-striped table-hover table-bordered">
                     <thead>
@@ -101,7 +96,7 @@
                                 <input type="checkbox" data-toggle="checkall" data-target=".ids"/>
                             </th>
                         {% endif %}
-                        {% for column in viewColumns %}
+                        {% for column in entity.columns %}
                             {% set columnHeaderBlock = column.alias ~ '_header' %}
                             {% block columnHeaderBlock %}
                                 <th>
@@ -126,16 +121,16 @@
                     </tr>
                     </thead>
                     <tbody>
-                    {% if data.items|length %}
-                        {% for row in data.items %}
-                            {% set rowIdentifier = row[identifierField] ?? null %}
+                    {% if entity.data.items|length %}
+                        {% for row in entity.data.items %}
+                            {% set rowIdentifier = row[entity.primaryColumn.field] ?? null %}
                             <tr id="row_{{ loop.index }}">
                                 {% if rowIdentifier and form.batch.method is defined %}
                                     <td>
                                         <input type="checkbox" class="ids" name="batch[ids][]" value="{{ rowIdentifier }}"/>
                                     </td>
                                 {% endif %}
-                                {% for column in viewColumns %}
+                                {% for column in entity.columns %}
                                     {% set value = row[column.field] ?? null %}
                                     {% set columnBlockKey = 'column_' ~ column.alias %}
                                     {% set columnValueBlockKey = 'column_' ~ column.alias ~ '_value' %}
@@ -160,35 +155,13 @@
                                             {{ action.title|trans }}
                                         </a>
                                     {% endfor %}
-                                    {% if hasAction('view') %}
-                                        <a href="{{ generatePath('view', {id: rowIdentifier}) }}"
-                                           class="btn btn-sm btn-secondary">
-                                            <i class="fas fa-eye"></i>
-                                            {{ 'View'|trans }}
-                                        </a>
-                                    {% endif %}
-                                    {% if hasAction('edit') %}
-                                        <a href="{{ generatePath('edit', {id: rowIdentifier}) }}"
-                                           class="btn btn-sm btn-outline-primary">
-                                            <i class="fas fa-edit"></i>
-                                            {{ 'Edit'|trans }}
-                                        </a>
-                                    {% endif %}
-                                    {% if hasAction('delete') %}
-                                        <a onclick="return confirm('Are you sure?')"
-                                           href="{{ generatePath('delete', {id: rowIdentifier}) }}"
-                                           class="btn btn-sm btn-outline-danger">
-                                            <i class="fas fa-trash"></i>
-                                            {{ 'Remove'|trans }}
-                                        </a>
-                                    {% endif %}
                                 </td>
                                 {% endif %}
                             </tr>
                         {% endfor %}
                     {% else %}
                         <tr>
-                            <td colspan="{{ columns|length + 1 + (form.batch.method is defined ? 1 : 0) }}">
+                            <td colspan="{{ entity.columns|length + 1 + (form.batch.method is defined ? 1 : 0) }}">
                                 {{ 'Not results found.'|trans }}
                             </td>
                         </tr>
@@ -220,14 +193,14 @@
         </div>
 
         <div class="d-flex justify-content-center">
-            {% include '@DakataaCrud/paginator.html.twig' with { data: data, route: getRoute('list')} %}
+            {% include '@DakataaCrud/paginator.html.twig' with { data: entity.data, route: getRoute('list')} %}
         </div>
 
         {{ form_end(form.batch, {'render_rest': false}) }}
     </div>
     <script type="text/javascript">
 		let resultsLimit = document.querySelector('#results-limit');
-		resultsLimit.value = {{ data.meta.maxResults }};
+		resultsLimit.value = {{ entity.data.meta.maxResults }};
 		resultsLimit.addEventListener('change', function () {
 			let url = new URL(document.location.href);
 			url.searchParams.set('limit', resultsLimit.value);

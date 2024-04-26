@@ -6,6 +6,7 @@ use Dakataa\Crud\Attribute\Navigation\NavigationGroup;
 use Dakataa\Crud\Attribute\Navigation\NavigationItem;
 use Dakataa\Crud\Attribute\Navigation\NavigationItemInterface;
 use ReflectionClass;
+use Symfony\Bundle\MakerBundle\Generator;
 use Symfony\Component\DependencyInjection\Attribute\TaggedLocator;
 use Symfony\Component\DependencyInjection\ServiceLocator;
 
@@ -44,24 +45,22 @@ class Navigation
 		return ucfirst(strtolower(trim(preg_replace(['/([A-Z])/', '/[_\s]+/'], ['_$1', ' '], $text))));
 	}
 
-	public function getItems(): ?array
+	public function getItems(): \Generator
 	{
-		$getItems = function ($items, string $group = null) use (&$getItems): array {
-			$rows = [];
+		$getItems = function ($items, string $group = null) use (&$getItems): \Generator {
 			foreach (array_filter($items, fn(NavigationItemInterface $ni) => $group === $ni->group) as $item) {
-				$rows[] = [
-					'item' => $item,
-					'items' => $item instanceof NavigationGroup ? $getItems($items, $item->title) : null,
-				];
-			}
+				if($item instanceof NavigationGroup) {
+					$item->items = iterator_to_array($getItems($items, $item->group ?: $item->title));
+				}
 
-			return $rows;
+				yield $item;
+			}
 		};
 
 		return $getItems($this->items);
 	}
 
 	public function hasNavigation(): bool {
-		return !empty($this->getItems());
+		return !empty($this->items);
 	}
 }

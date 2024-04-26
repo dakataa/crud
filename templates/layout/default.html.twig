@@ -48,13 +48,13 @@
                     {% set hasItems = item.items is defined and item.items is not empty %}
                     {% set parent = (parent ? parent ~ '-' : '') ~ loop.index %}
                     <div class="item">
-                        <a {% if item.item.controllerMethod is defined  %}href="{{ path(item.item.controllerFQCN ~ '::' ~ (item.item.controllerMethod|default('list'))) }}"
+                        <a {% if item.controllerMethod is defined  %}href="{{ path(item.controllerFQCN ~ '::' ~ (item.controllerMethod|default('list'))) }}"
                            {% else %}data-bs-toggle="collapse" href="#subnav-{{ parent }}"{% endif %}>
                             <span class="icon">
                                 <!-- icon here !-->
                             </span>
                             <span class="title">
-                                {{ item.item.title|trans }}
+                                {{ item.title|trans }}
                             </span>
                         </a>
                         {% if hasItems %}

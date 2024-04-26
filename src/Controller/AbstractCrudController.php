@@ -15,6 +15,7 @@ use Dakataa\Crud\Serializer\Normalizer\ActionNormalizer;
 use Dakataa\Crud\Serializer\Normalizer\ColumnNormalizer;
 use Dakataa\Crud\Serializer\Normalizer\FormErrorNormalizer;
 use Dakataa\Crud\Serializer\Normalizer\FormViewNormalizer;
+use Dakataa\Crud\Serializer\Normalizer\RouteNormalizer;
 use Dakataa\Crud\Utils\Doctrine\Paginator;
 use DateTime;
 use DateTimeInterface;
@@ -164,7 +165,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 
 		$result = [];
-		foreach ($this->getEntityColumns($viewGroup) as $column) {
+		foreach ($this->getEntityColumns($viewGroup, includeIdentifier: true) as $column) {
 			$field = $column->getAlias();
 
 			$value = null;
@@ -270,8 +271,11 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 		return $this->response($request, [
 			'title' => $action?->title ?: $this->titlize($this->getEntityShortName()),
-			'columns' => iterator_to_array($this->getEntityColumns(searchable: false)),
-			'data' => $this->prepareListData($paginator),
+			'entity' => [
+				'columns' => iterator_to_array($this->getEntityColumns(searchable: false)),
+				'primaryColumn' => $this->getEntityPrimaryColumn(),
+				'data' => $this->prepareListData($paginator),
+			],
 			'form' => [
 				'filter' => $filterForm->createView(),
 				'batch' => $this->getBatchForm($request)->createView()
@@ -440,11 +444,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			'csrf_protection' => false,
 		], $this->getEntityType()->getOptions() ?: []);
 
-		if (empty($object)) {
-			$entityClass = $this->getEntity()->getFqcn();
-			$object = new $entityClass();
-		}
-
 		$this->onFormTypeBeforeCreate($request, $object);
 		$form = $this->formFactory->createNamed(
 			'form_'.Container::underscore($this->getEntityShortName()).'_'.($id ?? 'new'),
@@ -604,11 +603,12 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				$classMetadataFactory = new ClassMetadataFactory(new AttributeLoader());
 				$serializer = new Serializer(
 					[
-						new FormErrorNormalizer(),
-						new FormViewNormalizer(),
-						new BackedEnumNormalizer(),
-						new ColumnNormalizer(),
-						new ActionNormalizer(),
+						new FormErrorNormalizer,
+						new FormViewNormalizer,
+						new BackedEnumNormalizer,
+						new ColumnNormalizer,
+						new ActionNormalizer($this->router),
+						new RouteNormalizer,
 						new DateTimeNormalizer([
 							DateTimeNormalizer::FORMAT_KEY => 'Y-m-d H:i:s',
 						]),
@@ -1034,7 +1034,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	 * @return Generator
 	 * @throws Exception
 	 */
-	public function getEntityColumns(EntityColumnViewGroupEnum|string|false $viewGroup = null, bool $searchable = false): Generator
+	public function getEntityColumns(EntityColumnViewGroupEnum|string|false $viewGroup = null, bool $searchable = false, bool $includeIdentifier = false): Generator
 	{
 		$viewGroup = (is_string($viewGroup) ? EntityColumnViewGroupEnum::tryFrom($viewGroup) : null) ?: $viewGroup;
 
@@ -1042,29 +1042,36 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			$this->entity->columns = array_map(fn(string $fieldName) => new Column($fieldName), $this->entityManager->getClassMetadata($this->getEntity()->getFqcn())->getFieldNames());
 		}
 
-		$identifierFields = $this->getEntityClassMetadata()->getIdentifierFieldNames();
+		$columns = array_filter(
+			$this->entity->columns,
+			fn(Column $c) =>
+				(
+					!$c->getGroup() ||
+					$c->getGroup() === $viewGroup
+				)
+				&&
+				(
+					null === $c->getSearchable() ||
+					$c->getSearchable() instanceof SearchableOptions ||
+					$searchable === $c->getSearchable()
+				)
+		);
 
-		array_map(fn($column) => $column->setIdentifier(in_array($column->getField(), $identifierFields)), $this->entity->columns);
-		$hasIdentifier = array_reduce($this->entity->columns, fn(bool $hasIdentifier, Column $c) => $hasIdentifier || in_array($c->getField(), $identifierFields), false);
-		if(!$hasIdentifier) {
-			$this->entity->columns[] = $this->getEntityPrimaryColumn();
+		$identifierFields = $this->getEntityClassMetadata()->getIdentifierFieldNames();
+		if($includeIdentifier) {
+			array_map(fn($column) => $column->setIdentifier(in_array($column->getField(), $identifierFields)), $columns);
+
+			$hasIdentifier = array_reduce(
+				$columns,
+				fn(bool $hasIdentifier, Column $c) => $hasIdentifier || in_array($c->getField(), $identifierFields),
+				false
+			);
+			if (!$hasIdentifier) {
+				$columns[] = $this->getEntityPrimaryColumn();
+			}
 		}
 
-		foreach (
-			array_filter(
-				$this->entity->columns,
-				fn(Column $c) =>
-					(
-						!$c->getGroup() || $c->getGroup() === $viewGroup
-					)
-					&&
-					(
-						null === $c->getSearchable() ||
-						$c->getSearchable() instanceof SearchableOptions ||
-						$searchable === $c->getSearchable()
-					)
-			) as $column
-		) {
+		foreach ($columns as $column) {
 			yield $column;
 		}
 	}
@@ -1141,7 +1148,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 	protected function getMappedRoutes(): array
 	{
-		return $this->getMapActionToRoute();
+		return array_map(fn(Action $action) => $action->route, $this->getMapActionToRoute());
 	}
 
 	protected function hasRoute(string $method): bool
@@ -1152,6 +1159,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	protected function getRoute(string $method = null): string
 	{
 		$mappedRoute = $this->getMappedRoutes()[$method] ?? null;
+
 		if (null !== $mappedRoute) {
 			return $mappedRoute;
 		}

@@ -11,6 +11,7 @@ class NavigationGroup implements NavigationItemInterface
 		public string $title,
 		public ?string $group = null,
 		public ?int $rank = null,
+		public ?array $items = null
 	) {
 	}
 
