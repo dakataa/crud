@@ -2,11 +2,19 @@
 
 namespace Dakataa\Crud\Serializer\Normalizer;
 
+use Dakataa\Crud\Attribute\Column;
+use Symfony\Component\Form\FormError;
+use Symfony\Component\Form\FormErrorIterator;
+use Symfony\Component\Form\FormView;
 use Symfony\Component\Routing\Route;
+use Symfony\Component\Serializer\Normalizer\NormalizerAwareInterface;
+use Symfony\Component\Serializer\Normalizer\NormalizerAwareTrait;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
-class RouteNormalizer implements NormalizerInterface
+class RouteNormalizer implements NormalizerInterface, NormalizerAwareInterface
 {
+	use NormalizerAwareTrait;
+
 	/**
 	 * @param Route $object
 	 * @param string|null $format

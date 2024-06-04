@@ -34,7 +34,7 @@ class ColumnNormalizer implements NormalizerInterface
 	public function getSupportedTypes(?string $format): array
 	{
 		return [
-			Column::class => false,
+			Column::class => true,
 		];
 	}
 

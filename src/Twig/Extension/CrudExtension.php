@@ -54,14 +54,14 @@ class CrudExtension extends AbstractExtension
 	public function getRoute(string $method, string $controllerFQCN = null)
 	{
 		$controllerFQCN ??= $this->getControllerClass();
-		$mappedRoutes = $this->crudSubscriber->getController()?->getMapActionToRoute();
+		$mappedRoutes = $this->crudSubscriber->getController()?->getActions();
 
 		return $mappedRoutes[$method]?->getRoute() ?? ($controllerFQCN.'::'.$method);
 	}
 
 	public function hasAction(string $method): bool
 	{
-		$mappedRoutes = $this->crudSubscriber->getController()?->getMapActionToRoute();
+		$mappedRoutes = $this->crudSubscriber->getController()?->getActions();
 
 		return isset($mappedRoutes[$method]);
 	}

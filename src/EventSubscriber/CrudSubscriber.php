@@ -3,7 +3,6 @@
 namespace Dakataa\Crud\EventSubscriber;
 
 use Dakataa\Crud\Attribute\Action;
-use Dakataa\Crud\Attribute\Entity;
 use Dakataa\Crud\Controller\AbstractCrudController;
 use Doctrine\ORM\EntityManagerInterface;
 use ReflectionAttribute;
@@ -115,7 +114,7 @@ class CrudSubscriber
 			return;
 		}
 
-		$event->setController([$this->controller, $action->action]);
+		$event->setController([$this->controller, $action->action], ['action' => $action]);
 	}
 
 	public function getAttributes(ControllerEvent $controllerEvent, string $attributeClass): array

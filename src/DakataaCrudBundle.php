@@ -2,11 +2,13 @@
 
 namespace Dakataa\Crud;
 
+use Dakataa\Crud\Attribute\Action;
 use Dakataa\Crud\Attribute\Entity;
 use Dakataa\Crud\Attribute\Navigation\NavigationGroup;
 use Dakataa\Crud\Attribute\Navigation\NavigationItem;
 use Dakataa\Crud\Controller\GeneralController;
 use Dakataa\Crud\EventSubscriber\CrudSubscriber;
+use Dakataa\Crud\Service\ActionCollection;
 use Dakataa\Crud\Service\Navigation;
 use Dakataa\Crud\Twig\Extension\CrudExtension;
 use Dakataa\Crud\Twig\Extension\NavigationExtension;
@@ -64,6 +66,12 @@ class DakataaCrudBundle extends AbstractBundle
 
 		$container
 			->services()
+			->set(RouteCollection::class, ActionCollection::class)
+			->autowire()
+			->autoconfigure();
+
+		$container
+			->services()
 			->set(CrudSubscriber::class, CrudSubscriber::class)
 			->tag('controller.service_arguments')
 			->autowire()
@@ -108,6 +116,17 @@ class DakataaCrudBundle extends AbstractBundle
 				ReflectionClass $reflector
 			): void {
 				$definition->addTag('dakataa.crud.navigation');
+			}
+		);
+
+		$builder->registerAttributeForAutoconfiguration(
+			Action::class,
+			static function (
+				ChildDefinition $definition,
+				Action $attribute,
+				ReflectionClass $reflector
+			): void {
+				$definition->addTag('dakataa.crud.action');
 			}
 		);
 

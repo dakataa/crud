@@ -87,6 +87,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	protected ?Entity $entity = null;
 	protected ?EntityType $entityType = null;
 	protected ?ClassMetadata $entityClassMetadata = null;
+	protected ?array $actions = null;
 
 	protected function getAttributes(string $attributeClass): array
 	{
@@ -272,8 +273,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return $this->response($request, [
 			'title' => $action?->title ?: $this->titlize($this->getEntityShortName()),
 			'entity' => [
-				'columns' => iterator_to_array($this->getEntityColumns(searchable: false)),
 				'primaryColumn' => $this->getEntityPrimaryColumn(),
+				'columns' => iterator_to_array($this->getEntityColumns(searchable: false)),
 				'data' => $this->prepareListData($paginator),
 			],
 			'form' => [
@@ -281,7 +282,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				'batch' => $this->getBatchForm($request)->createView()
 			],
 			'sort' => $sorting,
-			'action' => $this->getMapActionToRoute()
+			'action' => $this->getActions()
 		], defaultTemplate: 'list');
 	}
 
@@ -319,7 +320,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			->buildCustomQuery($request, $query);
 
 		$objects = $query->getQuery()->getResult();
-
 
 		//Excel
 		$spreadsheet = new Spreadsheet();
@@ -363,11 +363,11 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			$cell->getStyle()->getFont()->setBold(true);
 		}
 		$writer = new $exportType['writer']($spreadsheet);
-		$response = new StreamedResponse(fn() => $writer->save('php://output'));
-		$response->headers->set('Content-Type', 'application/force-download');
-		$response->headers->set('Content-Disposition', 'attachment; filename="export.'.$exportType['ext'].'"');
 
-		return $response;
+		return new StreamedResponse(fn() => $writer->save('php://output'), headers: [
+			'Content-Type' => 'application/force-download',
+			'Content-Disposition' => 'attachment; filename="export.'.$exportType['ext'].'"'
+		]);
 	}
 
 	/**
@@ -418,6 +418,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	#[Action(object: true)]
 	public function edit(Request $request, int $id = null, Action $action = null): ?Response
 	{
+
 		if (!$this->getEntityType()) {
 			throw new NotFoundHttpException('Not Entity Type found.');
 		}
@@ -472,9 +473,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				if ($request->getPreferredFormat() === 'html') {
 					return new RedirectResponse(
 						$this->router->generate($this->getRoute('edit'), [
-							'id' => $this->getEntityClassMetadata()->getIdentifierValues(
-									$form->getData()
-								)[$entityClassIdentifierFieldName] ?? null,
+							'id' => $this->getEntityClassMetadata()->getIdentifierValues($form->getData())[$entityClassIdentifierFieldName] ?? null,
 						])
 					);
 				}
@@ -485,7 +484,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 		return $this->response($request, [
 			'object' => $object,
-			'form' => $form->createView(),
+			'form' => [
+				'modify' => $form->createView(),
+			]
 		], $responseStatus, defaultTemplate: 'edit');
 	}
 
@@ -608,11 +609,12 @@ abstract class AbstractCrudController implements CrudControllerInterface
 						new BackedEnumNormalizer,
 						new ColumnNormalizer,
 						new ActionNormalizer($this->router),
-						new RouteNormalizer,
 						new DateTimeNormalizer([
 							DateTimeNormalizer::FORMAT_KEY => 'Y-m-d H:i:s',
 						]),
+						new RouteNormalizer,
 						new ObjectNormalizer($classMetadataFactory, defaultContext: [
+							AbstractNormalizer::CIRCULAR_REFERENCE_HANDLER => fn() => null,
 							AbstractNormalizer::GROUPS => ['view'],
 //							AbstractNormalizer::ATTRIBUTES => $attributes
 						]),
@@ -1148,7 +1150,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 	protected function getMappedRoutes(): array
 	{
-		return array_map(fn(Action $action) => $action->route, $this->getMapActionToRoute());
+		return array_map(fn(Action $action) => $action->route, $this->getActions());
 	}
 
 	protected function hasRoute(string $method): bool
@@ -1171,89 +1173,106 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return static::class.'::'.$method;
 	}
 
-	public function getMapActionToRoute(): array
+	public function getActions(): array
 	{
-		$entityFQCN = $this->getEntity()->fqcn;
-		$reflectionClass = new ReflectionClass($this->getControllerClass());
+		if(!$this->actions) {
+			$entityFQCN = $this->getEntity()->fqcn;
+			$reflectionClass = new ReflectionClass($this->getControllerClass());
 
-		return array_reduce(
-			$reflectionClass->getMethods(),
-			function (array $result, ReflectionMethod $reflectionMethod) use ($reflectionClass, $entityFQCN) {
-				$actionAttributes = $reflectionMethod->getAttributes(Action::class);
-				if (empty($actionAttributes)) {
-					return $result;
-				}
+			$this->actions = array_reduce(
+				$reflectionClass->getMethods(),
+				function (array $result, ReflectionMethod $reflectionMethod) use ($reflectionClass, $entityFQCN) {
+					$actionAttributes = $reflectionMethod->getAttributes(Action::class);
+					if (empty($actionAttributes)) {
+						return $result;
+					}
 
-				return array_merge(
-					$result,
-					...
-					array_filter(
-						array_map(
-							function (ReflectionAttribute $actionRefAttribute) use (
-								$reflectionClass,
-								$reflectionMethod,
-								$entityFQCN
-							) {
-								/** @var \Symfony\Component\Routing\Attribute\Route|null $routeAttribute */
-								$routeAttribute = ($reflectionMethod->getAttributes(Route::class)[0] ?? null)?->newInstance();
+					return array_merge(
+						$result,
+						...
+						array_filter(
+							array_map(
+								function (ReflectionAttribute $actionRefAttribute) use (
+									$reflectionClass,
+									$reflectionMethod,
+									$entityFQCN
+								) {
+									/** @var \Symfony\Component\Routing\Attribute\Route|null $routeAttribute */
+									$routeAttribute = ($reflectionMethod->getAttributes(
+										Route::class
+									)[0] ?? null)?->newInstance();
 
-								/** @var IsGranted[] $isGrantedAttributes */
-								$isGrantedAttributes = array_map(
-									fn(ReflectionAttribute $refAttribute) => $refAttribute->newInstance(),
-									$reflectionMethod->getAttributes(IsGranted::class)
-								);
-
-								if ($entityFQCN) {
-									/** @var string[] $entityAttributesFQCN */
-									$entityAttributesFQCN = array_map(
-										fn(ReflectionAttribute $refAttribute) => $refAttribute->newInstance()->fqcn,
-										$reflectionMethod->getAttributes(Entity::class)
+									/** @var IsGranted[] $isGrantedAttributes */
+									$isGrantedAttributes = array_map(
+										fn(ReflectionAttribute $refAttribute) => $refAttribute->newInstance(),
+										$reflectionMethod->getAttributes(IsGranted::class)
 									);
 
-									if (empty($entityAttributesFQCN)) {
+									if ($entityFQCN) {
+										/** @var string[] $entityAttributesFQCN */
 										$entityAttributesFQCN = array_map(
 											fn(ReflectionAttribute $refAttribute) => $refAttribute->newInstance()->fqcn,
-											$reflectionClass->getAttributes(Entity::class)
+											$reflectionMethod->getAttributes(Entity::class)
 										);
+
+										if (empty($entityAttributesFQCN)) {
+											$entityAttributesFQCN = array_map(
+												fn(ReflectionAttribute $refAttribute) => $refAttribute->newInstance(
+												)->fqcn,
+												$reflectionClass->getAttributes(Entity::class)
+											);
+										}
+
+										if (empty($entityAttributesFQCN) || !in_array(
+												$entityFQCN,
+												$entityAttributesFQCN
+											)) {
+											return null;
+										}
 									}
 
-									if (empty($entityAttributesFQCN) || !in_array($entityFQCN, $entityAttributesFQCN)) {
+									foreach ($isGrantedAttributes as $isGrantedAttribute) {
+										if (!$this->authorizationChecker->isGranted($isGrantedAttribute->attribute)) {
+											return null;
+										}
+									}
+
+									/** @var Action $actionInstance */
+									$actionInstance = $actionRefAttribute->newInstance();
+									$action = ($actionInstance->action ?: $reflectionMethod->name);
+									$title = ($actionInstance->action ?: $this->titlize(
+										ucfirst($reflectionMethod->name)
+									));
+									$routeName = $routeAttribute?->getName(
+									) ?: ($reflectionClass->name.'::'.$reflectionMethod->name);
+
+									$actionInstance
+										->setAction($action)
+										->setTitle($title)
+										->setRoute($routeName);
+
+									if (empty(
+										$reflectionMethod->getAttributes(
+											EntityType::class
+										)
+										) && empty($reflectionClass->getAttributes(EntityType::class))) {
 										return null;
 									}
-								}
 
-								foreach ($isGrantedAttributes as $isGrantedAttribute) {
-									if (!$this->authorizationChecker->isGranted($isGrantedAttribute->attribute)) {
-										return null;
-									}
-								}
-
-								/** @var Action $actionInstance */
-								$actionInstance = $actionRefAttribute->newInstance();
-								$action = ($actionInstance->action ?: $reflectionMethod->name);
-								$title = ($actionInstance->action ?: $this->titlize(ucfirst($reflectionMethod->name)));
-								$route = $routeAttribute?->getName() ?: ($reflectionClass->name.'::'.$reflectionMethod->name);
-
-								$actionInstance
-									->setAction($action)
-									->setTitle($title)
-									->setRoute($route);
-
-								if (empty($reflectionMethod->getAttributes(EntityType::class)) && empty($reflectionClass->getAttributes(EntityType::class))) {
-									return null;
-								}
-
-								return [
-									$action => $actionInstance
-								];
-							},
-							$actionAttributes
+									return [
+										$action => $actionInstance
+									];
+								},
+								$actionAttributes
+							)
 						)
-					)
-				);
-			},
-			[]
-		);
+					);
+				},
+				[]
+			);
+		}
+
+		return $this->actions;
 	}
 
 	protected function titlize(string $value): string {

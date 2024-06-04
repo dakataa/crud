@@ -4,10 +4,14 @@ namespace Dakataa\Crud\Serializer\Normalizer;
 
 use Dakataa\Crud\Attribute\Action;
 use Symfony\Component\Routing\RouterInterface;
+use Symfony\Component\Serializer\Normalizer\NormalizerAwareInterface;
+use Symfony\Component\Serializer\Normalizer\NormalizerAwareTrait;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
-class ActionNormalizer implements NormalizerInterface
+class ActionNormalizer implements NormalizerInterface, NormalizerAwareInterface
 {
+	use NormalizerAwareTrait;
+
 	public function __construct(protected RouterInterface $router) {
 
 	}
@@ -25,7 +29,7 @@ class ActionNormalizer implements NormalizerInterface
 			'action' => $object->getAction(),
 			'title' => $object->getTitle(),
 			'object' => $object->getObject(),
-			'route' => $route
+			'route' => $this->normalizer->normalize($route)
 		];
 	}
 

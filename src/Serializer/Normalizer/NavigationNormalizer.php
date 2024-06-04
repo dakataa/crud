@@ -10,10 +10,13 @@ use Dakataa\Crud\Attribute\Navigation\NavigationItemInterface;
 use Dakataa\Crud\Attribute\SearchableOptions;
 use Symfony\Component\Form\FormView;
 use Symfony\Component\Routing\RouterInterface;
+use Symfony\Component\Serializer\Normalizer\NormalizerAwareInterface;
+use Symfony\Component\Serializer\Normalizer\NormalizerAwareTrait;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
-class NavigationNormalizer implements NormalizerInterface
+class NavigationNormalizer implements NormalizerInterface, NormalizerAwareInterface
 {
+	use NormalizerAwareTrait;
 
 	public function __construct(protected RouterInterface $router) {
 
@@ -31,7 +34,7 @@ class NavigationNormalizer implements NormalizerInterface
 			'title' => $object->title,
 			'rank' => $object->rank,
 			...($object instanceof NavigationItem ? [
-				'link' => $this->router->generate($object->getControllerFQCN().'::'.$object->getControllerMethod()),
+				'route' => $this->normalizer->normalize($this->router->getRouteCollection()->get($object->getControllerFQCN().'::'.$object->getControllerMethod())),
 			] : [
 				'items' => array_map(fn(mixed $o) => $this->normalize($o, $format, $context), $object->items)
 			])
