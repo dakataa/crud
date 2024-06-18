@@ -44,12 +44,12 @@ class CrudSubscriber
 
 		if (is_a($controllerObject, AbstractCrudController::class, true)) {
 			$this->controller = $controllerObject;
+
 			return;
 		}
 
 		/** @var Action $action */
 		$action = array_shift($actions);
-		$parent = $this;
 		$this->controller = new class (
 			$this,
 			$event,
@@ -77,7 +77,15 @@ class CrudSubscriber
 			) {
 				$this->originClassName = get_class($this->controllerEvent->getController()[0]);
 
-				parent::__construct($formFactory, $router, $dispatcher, $entityManager, $parameterBag, $twig, authorizationChecker: $authorizationChecker);
+				parent::__construct(
+					$formFactory,
+					$router,
+					$dispatcher,
+					$entityManager,
+					$parameterBag,
+					$twig,
+					authorizationChecker: $authorizationChecker
+				);
 			}
 
 			protected function getControllerClass(): string
@@ -85,9 +93,12 @@ class CrudSubscriber
 				return $this->originClassName;
 			}
 
-			protected function getAttributes(string $attributeClass): array
+			protected function getPHPAttributes(string $attributeFQCN, string $method = null): array
 			{
-				return $this->crudSubscriber->getAttributes($this->controllerEvent, $attributeClass);
+				if($method)
+					$this->crudSubscriber->getPHPAttributes($this->controllerEvent, $attributeFQCN);
+
+				return $this->crudSubscriber->getPHPAttributes($this->controllerEvent, $attributeFQCN);
 			}
 		};
 
@@ -110,27 +121,25 @@ class CrudSubscriber
 			}
 		}
 
-		if(!method_exists($this->controller, $action->action)) {
+		if (!method_exists($this->controller, $action->action)) {
 			return;
 		}
 
-		$event->setController([$this->controller, $action->action], ['action' => $action]);
+		$event->setController([$this->controller, $action->action], [Action::class => [$action]]);
 	}
 
-	public function getAttributes(ControllerEvent $controllerEvent, string $attributeClass): array
+	public function getPHPAttributes(ControllerEvent $controllerEvent, string $attributeClass): array
 	{
-		// Get Method Attributes
-		$attributes = array_map(
-			fn(ReflectionAttribute $reflectionAttribute) => $reflectionAttribute->newInstance(),
-			$controllerEvent->getControllerReflector()->getAttributes($attributeClass)
-		);
-
+		$attributes = array_reverse($controllerEvent->getAttributes($attributeClass));
 		if (!empty($attributes)) {
 			return $attributes;
 		}
 
-		// Return Class Attributes if Method Attributes not exists
-		return array_reverse($controllerEvent->getAttributes($attributeClass));
+		// Get Method Attributes
+		return array_map(
+			fn(ReflectionAttribute $reflectionAttribute) => $reflectionAttribute->newInstance(),
+			$controllerEvent->getControllerReflector()->getAttributes($attributeClass)
+		);
 	}
 
 	public function getController(): ?AbstractCrudController

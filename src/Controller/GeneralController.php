@@ -3,22 +3,15 @@
 namespace Dakataa\Crud\Controller;
 
 use Dakataa\Crud\Serializer\Normalizer\ActionNormalizer;
-use Dakataa\Crud\Serializer\Normalizer\ColumnNormalizer;
-use Dakataa\Crud\Serializer\Normalizer\FormErrorNormalizer;
-use Dakataa\Crud\Serializer\Normalizer\FormViewNormalizer;
 use Dakataa\Crud\Serializer\Normalizer\NavigationNormalizer;
 use Dakataa\Crud\Serializer\Normalizer\RouteNormalizer;
+use Dakataa\Crud\Service\ActionCollection;
 use Dakataa\Crud\Service\Navigation;
-use Dakataa\Crud\Service\RouteCollection;
 use Symfony\Component\HttpFoundation\JsonResponse;
-use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Attribute\AsController;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Routing\RouterInterface;
 use Symfony\Component\Serializer\Normalizer\AbstractNormalizer;
-use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
-use Symfony\Component\Serializer\Normalizer\DateTimeNormalizer;
-use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
 
 #[AsController]
@@ -43,15 +36,15 @@ class GeneralController
 		);
 	}
 
-	#[Route('/routes')]
-	public function routes(RouteCollection $routeCollection): JsonResponse
+	#[Route('/actions')]
+	public function actions(ActionCollection $actionCollection, RouterInterface $router): JsonResponse
 	{
 		$serializer = new Serializer([
-			new RouteNormalizer,
+			new ActionNormalizer($router)
 		]);
 
 		return new JsonResponse(
-			$serializer->normalize($routeCollection->getItems(), context: [
+			$serializer->normalize(iterator_to_array($actionCollection->getItems(), false), context: [
 				AbstractNormalizer::CIRCULAR_REFERENCE_HANDLER => fn() => null,
 			])
 		);

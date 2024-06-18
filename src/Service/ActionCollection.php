@@ -2,24 +2,27 @@
 
 namespace Dakataa\Crud\Service;
 
-use Symfony\Component\DependencyInjection\Attribute\TaggedLocator;
+use Dakataa\Crud\Loader\ActionAttributeLoader;
+use Generator;
+use Symfony\Component\DependencyInjection\Attribute\AutowireLocator;
 use Symfony\Component\DependencyInjection\ServiceLocator;
 use Symfony\Component\Routing\RouterInterface;
 
 class ActionCollection
 {
-	protected array $items;
 
 	public function __construct(
-		#[TaggedLocator('dakataa.crud.action')]
-		private ServiceLocator $handlers,
+		#[AutowireLocator('dakataa.crud.entity')]
+		private readonly ServiceLocator $handlers,
 		protected RouterInterface $router
 	) {
-		$this->items = $this->handlers->getProvidedServices();
 	}
 
-	public function getItems(): array
+	public function getItems(): Generator
 	{
-		return $this->items;
+		$loader = new ActionAttributeLoader;
+		foreach ($this->handlers->getProvidedServices() as $serviceFQCN) {
+			yield from $loader->load($serviceFQCN);
+		}
 	}
 }

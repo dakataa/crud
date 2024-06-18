@@ -17,6 +17,7 @@ use Dakataa\Crud\Serializer\Normalizer\FormErrorNormalizer;
 use Dakataa\Crud\Serializer\Normalizer\FormViewNormalizer;
 use Dakataa\Crud\Serializer\Normalizer\RouteNormalizer;
 use Dakataa\Crud\Utils\Doctrine\Paginator;
+use Dakataa\Crud\Utils\StringHelper;
 use DateTime;
 use DateTimeInterface;
 use Doctrine\Common\Collections\Collection;
@@ -89,15 +90,16 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	protected ?ClassMetadata $entityClassMetadata = null;
 	protected ?array $actions = null;
 
-	protected function getAttributes(string $attributeClass): array
+	protected function getPHPAttributes(string $attributeFQCN, string $method = null): array
 	{
+		$reflectionClass = new ReflectionClass($this->getControllerClass());
 		return array_map(fn(ReflectionAttribute $attribute) => $attribute->newInstance(),
-			(new ReflectionClass($this))->getAttributes($attributeClass));
+			($method ? $reflectionClass->getMethod($method) : $reflectionClass)->getAttributes($attributeFQCN));
 	}
 
-	protected function getAttribute(string $attributeClass): mixed
+	protected function getPHPAttribute(string $attributeClass, string $method = null): mixed
 	{
-		return ($this->getAttributes($attributeClass)[0] ?? null);
+		return ($this->getPHPAttributes($attributeClass, $method)[0] ?? null);
 	}
 
 	public function __construct(
@@ -110,19 +112,19 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		protected ?SerializerInterface $serializer = null,
 		protected ?AuthorizationCheckerInterface $authorizationChecker = null
 	) {
-		$this->entity = $this->getAttribute(Entity::class);
-		$this->entityType = $this->getAttribute(EntityType::class);
+		$this->entity = $this->getPHPAttribute(Entity::class);
+		$this->entityType = $this->getPHPAttribute(EntityType::class);
 
 		if (empty($this->entity?->joins)) {
-			$this->entity?->setJoins($this->getAttributes(EntityJoinColumn::class));
+			$this->entity?->setJoins($this->getPHPAttributes(EntityJoinColumn::class));
 		}
 
 		if (empty($this->entity?->group)) {
-			$this->entity?->setGroup($this->getAttributes(EntityGroup::class));
+			$this->entity?->setGroup($this->getPHPAttributes(EntityGroup::class));
 		}
 
 		if (empty($this->entity?->columns)) {
-			$this->entity?->setColumns($this->getAttributes(Column::class));
+			$this->entity?->setColumns($this->getPHPAttributes(Column::class));
 		}
 
 		if (count($this->getEntityClassMetadata()->getIdentifierFieldNames()) > 1) {
@@ -243,8 +245,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		Route,
 		Action
 	]
-	public function list(Request $request, Action $action = null): Response
+	public function list(Request $request): Response
 	{
+		$action = $this->getPHPAttribute(Action::class, 'list');
 		$batchForm = $this->handleBatch($request);
 		if ($batchForm instanceof Response) {
 			return $batchForm;
@@ -271,7 +274,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			->setMaxResults($this->prepareResultsLimit($request));
 
 		return $this->response($request, [
-			'title' => $action?->title ?: $this->titlize($this->getEntityShortName()),
+			'title' => $action?->title ?: StringHelper::titlize($this->getEntityShortName()),
 			'entity' => [
 				'primaryColumn' => $this->getEntityPrimaryColumn(),
 				'columns' => iterator_to_array($this->getEntityColumns(searchable: false)),
@@ -295,9 +298,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	]
 	public function export(
 		Request $request,
-		string $type = self::EXPORT_EXCEL,
-		Action $action = null
+		string $type = self::EXPORT_EXCEL
 	): StreamedResponse {
+		$action = $this->getPHPAttribute(Action::class, 'export');
 		$exportTypes = [
 			self::EXPORT_EXCEL => ['ext' => 'xlsx', 'writer' => Xlsx::class],
 			self::EXPORT_EXCEL2007 => ['ext' => 'xls', 'writer' => Xls::class],
@@ -385,8 +388,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	 */
 	#[Route(path: '/{id}/view', requirements: ['id' => '\d+'])]
 	#[Action(object: true)]
-	public function view(Request $request, int $id, Action $action = null): ?Response
+	public function view(Request $request, int $id): ?Response
 	{
+		$action = $this->getPHPAttribute(Action::class, 'view');
 		$queryBuilder = $this
 			->getEntityRepository()
 			->createQueryBuilder(self::ENTITY_ROOT_ALIAS)
@@ -416,12 +420,13 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	 */
 	#[Route(path: '/{id}/edit', requirements: ['id' => '\d+'])]
 	#[Action(object: true)]
-	public function edit(Request $request, int $id = null, Action $action = null): ?Response
+	public function edit(Request $request, int $id = null): ?Response
 	{
-
 		if (!$this->getEntityType()) {
 			throw new NotFoundHttpException('Not Entity Type found.');
 		}
+
+		$action = $this->getPHPAttribute(Action::class, 'edit');
 
 		$object = null;
 		$entityClassIdentifierFieldName = $this->getEntityClassMetadata()->getSingleIdentifierFieldName();
@@ -483,6 +488,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 
 		return $this->response($request, [
+			'title' => $action?->title,
 			'object' => $object,
 			'form' => [
 				'modify' => $form->createView(),
@@ -1240,7 +1246,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 									/** @var Action $actionInstance */
 									$actionInstance = $actionRefAttribute->newInstance();
 									$action = ($actionInstance->action ?: $reflectionMethod->name);
-									$title = ($actionInstance->action ?: $this->titlize(
+									$title = ($actionInstance->action ?: StringHelper::titlize(
 										ucfirst($reflectionMethod->name)
 									));
 									$routeName = $routeAttribute?->getName(
@@ -1273,9 +1279,5 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 
 		return $this->actions;
-	}
-
-	protected function titlize(string $value): string {
-		return preg_replace(['/([A-Z]+)([A-Z][a-z])/', '/([a-z\d])([A-Z])/'], ['\\1 \\2', '\\1 \\2'], $value);
 	}
 }
