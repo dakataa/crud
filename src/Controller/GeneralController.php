@@ -40,7 +40,8 @@ class GeneralController
 	public function actions(ActionCollection $actionCollection, RouterInterface $router): JsonResponse
 	{
 		$serializer = new Serializer([
-			new ActionNormalizer($router)
+			new ActionNormalizer($router),
+			new RouteNormalizer
 		]);
 
 		return new JsonResponse(

@@ -22,8 +22,8 @@
                         </nav>
                     {% endblock %}
 
-                    {% if not form.modify.vars.valid %}
-                        {{ form_errors(form.modify) }}
+                    {% if not form.modify.view.vars.valid %}
+                        {{ form_errors(form.modify.view) }}
                     {% endif %}
                 </div>
             </header>
@@ -31,13 +31,13 @@
         <main class="tabs">
             <div class="wrap">
                 {% block form_start %}
-                    {{ form_start(form.modify, { action: app.request.uri, 'attr': { novalidate: 'novalidate', autocomplete: 'off', 'data-ajax':'true', 'data-submit': 'true'}}) }}
+                    {{ form_start(form.modify.view, { action: app.request.uri, 'attr': { novalidate: 'novalidate', autocomplete: 'off', 'data-ajax':'true', 'data-submit': 'true'}}) }}
                 {% endblock %}
                 <div class="tab-content">
                     {% block tabs %}
                         <div id="edit" class="tab tab-pane active in">
                             {% block form %}
-                                {{ form_rest(form.modify) }}
+                                {{ form_rest(form.modify.view) }}
                             {% endblock %}
                         </div>
                     {% endblock %}
@@ -48,7 +48,7 @@
                     {% endblock %}
                 </div>
                 {% block form_end %}
-                    {{ form_end(form.modify) }}
+                    {{ form_end(form.modify.view) }}
                 {% endblock %}
             </div>
         </main>

@@ -10,6 +10,7 @@ class EntityType
 	public function __construct(
 		public string $fqcn,
 		public ?array $options = null,
+		public ?string $successMessage = null
 	) {
 	}
 
@@ -18,7 +19,7 @@ class EntityType
 		return $this->fqcn;
 	}
 
-	public function setFqcn(string $fqcn): EntityType
+	public function setFqcn(string $fqcn): static
 	{
 		$this->fqcn = $fqcn;
 
@@ -30,9 +31,21 @@ class EntityType
 		return $this->options;
 	}
 
-	public function setOptions(?array $options): EntityType
+	public function setOptions(?array $options): static
 	{
 		$this->options = $options;
+
+		return $this;
+	}
+
+	public function getSuccessMessage(): ?string
+	{
+		return $this->successMessage;
+	}
+
+	public function setSuccessMessage(?string $successMessage): static
+	{
+		$this->successMessage = $successMessage;
 
 		return $this;
 	}

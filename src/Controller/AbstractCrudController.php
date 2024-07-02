@@ -43,6 +43,7 @@ use Stringable;
 use Symfony\Component\DependencyInjection\Container;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
+use Symfony\Component\ExpressionLanguage\ExpressionLanguage;
 use Symfony\Component\Form\Extension\Core\Type\CheckboxType;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
 use Symfony\Component\Form\Extension\Core\Type\CollectionType;
@@ -89,6 +90,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	protected ?EntityType $entityType = null;
 	protected ?ClassMetadata $entityClassMetadata = null;
 	protected ?array $actions = null;
+
+	private ?ExpressionLanguage $expressionLanguage = null;
 
 	protected function getPHPAttributes(string $attributeFQCN, string $method = null): array
 	{
@@ -281,8 +284,12 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				'data' => $this->prepareListData($paginator),
 			],
 			'form' => [
-				'filter' => $filterForm->createView(),
-				'batch' => $this->getBatchForm($request)->createView()
+				'filter' => [
+					'view' => $filterForm->createView(),
+				],
+				'batch' => [
+					'view' => $this->getBatchForm($request)->createView()
+				]
 			],
 			'sort' => $sorting,
 			'action' => $this->getActions()
@@ -409,6 +416,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 
 		return $this->response($request, [
+			'title' => $action?->title ? $this->getExpressionLanguage()->evaluate($action->title, [
+				'object' => $object
+			]) : null,
 			'object' => $object,
 			'data' => $this->compileEntityData($object),
 			'columns' => $this->getEntityColumns(EntityColumnViewGroupEnum::View),
@@ -426,6 +436,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			throw new NotFoundHttpException('Not Entity Type found.');
 		}
 
+		/** @var Action|null $action */
 		$action = $this->getPHPAttribute(Action::class, 'edit');
 
 		$object = null;
@@ -488,10 +499,15 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 
 		return $this->response($request, [
-			'title' => $action?->title,
+			'title' => $action?->title ? $this->getExpressionLanguage()->evaluate($action->title, [
+				'object' => $object
+			]) : null,
 			'object' => $object,
 			'form' => [
-				'modify' => $form->createView(),
+				'modify' => [
+					'view' => $form->createView(),
+					'message' => $message ?? null
+				],
 			]
 		], $responseStatus, defaultTemplate: 'edit');
 	}
@@ -1279,5 +1295,13 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 
 		return $this->actions;
+	}
+
+	protected function getExpressionLanguage(): ExpressionLanguage {
+		if(!$this->expressionLanguage) {
+			$this->expressionLanguage = new ExpressionLanguage;
+		}
+
+		return $this->expressionLanguage;
 	}
 }
