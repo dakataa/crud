@@ -280,7 +280,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			'title' => $action?->title ?: StringHelper::titlize($this->getEntityShortName()),
 			'entity' => [
 				'primaryColumn' => $this->getEntityPrimaryColumn(),
-				'columns' => iterator_to_array($this->getEntityColumns(searchable: false)),
+				'columns' => iterator_to_array($this->getEntityColumns()),
 				'data' => $this->prepareListData($paginator),
 			],
 			'form' => [
@@ -970,7 +970,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 			if ($canSelect || $hasFilterApplied) {
 				foreach ($relations as $relation) {
-					$query->innerJoin($relation['entity'].'.'.$relation['field'], $relation['alias']);
+					$query->leftJoin($relation['entity'].'.'.$relation['field'], $relation['alias']);
 				}
 			}
 
