@@ -14,6 +14,7 @@ class Entity
 	 * @param array & Column[]|null $columns
 	 * @param array & JoinColumn[]|null $joins
 	 * @param array & EntityGroup[]|null $group
+	 * @param array & EntitySort[]|null $sort
 	 */
 	public function __construct(
 		public string $fqcn,
@@ -21,6 +22,7 @@ class Entity
 		public ?array $columns = null,
 		public ?array $joins = null,
 		public array|null $group = null,
+		public array|null $sort = null
 	) {
 	}
 
@@ -82,6 +84,16 @@ class Entity
 	public function getGroup(): ?array
 	{
 		return $this->group;
+	}
+
+	public function getSort(): ?array
+	{
+		return $this->sort;
+	}
+
+	public function setSort(?array $sort): void
+	{
+		$this->sort = $sort;
 	}
 
 }

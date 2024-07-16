@@ -25,6 +25,7 @@ class RouteNormalizer implements NormalizerInterface, NormalizerAwareInterface
 	{
 		return [
 			'path' => $object->getPath(),
+			'method' => $object->getMethods(),
 			'variables' => $object->compile()->getVariables(),
 			'defaults' => array_intersect_key($object->getDefaults(), array_flip($object->compile()->getVariables())),
 			'requirements' => $object->getRequirements()
