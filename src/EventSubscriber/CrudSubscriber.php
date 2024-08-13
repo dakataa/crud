@@ -121,11 +121,11 @@ class CrudSubscriber
 			}
 		}
 
-		if (!method_exists($this->controller, $action->action)) {
+		if (!method_exists($this->controller, $action->name)) {
 			return;
 		}
 
-		$event->setController([$this->controller, $action->action], [Action::class => [$action]]);
+		$event->setController([$this->controller, $action->name], [Action::class => [$action]]);
 	}
 
 	public function getPHPAttributes(ControllerEvent $controllerEvent, string $attributeClass): array

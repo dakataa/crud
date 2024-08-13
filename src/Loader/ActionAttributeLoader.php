@@ -27,15 +27,15 @@ class ActionAttributeLoader {
 
 			foreach ($reflectionMethod->getAttributes(Action::class) as $reflectionAttribute) {
 				$actionInstance = $reflectionAttribute->newInstance();
-				$action = ($actionInstance->action ?: $reflectionMethod->name);
-				$title = ($actionInstance->action ?: StringHelper::titlize(
+				$name = ($actionInstance->name ?: $reflectionMethod->name);
+				$title = ($actionInstance->name ?: StringHelper::titlize(
 					ucfirst($reflectionMethod->name)
 				));
 				$routeName = $routeAttribute?->getName(
 				) ?: ($reflectionClass->name.'::'.$reflectionMethod->name);
 
 				$actionInstance
-					->setAction($action)
+					->setName($name)
 					->setTitle($title)
 					->setRoute($routeName);
 

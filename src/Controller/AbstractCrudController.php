@@ -243,7 +243,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		['items' => $items, 'meta' => $meta] = $paginator->paginate();
 
 		return [
-			'items' => array_map(fn(array|object $object) => $this->compileEntityData($object, $viewGroup), iterator_to_array($items)),
+			'items' => array_map(fn(array|object $object) => $this->compileEntityData($object, $viewGroup),
+				iterator_to_array($items)),
 			'meta' => $meta,
 		];
 	}
@@ -286,6 +287,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return $this->response($request, [
 			'title' => $action?->title ?: StringHelper::titlize($this->getEntityShortName()),
 			'entity' => [
+				'name' => $this->getEntityShortName(),
 				'primaryColumn' => $this->getEntityPrimaryColumn(),
 				'columns' => iterator_to_array($this->getEntityColumns()),
 				'data' => $this->prepareListData($paginator),
@@ -299,7 +301,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				],
 			],
 			'sort' => $sorting,
-			'action' => $this->getActions(),
+			'action' => array_filter($this->getActions(), fn(Action $action) => !in_array($action->name, ['list'])),
 		], defaultTemplate: 'list');
 	}
 
@@ -422,6 +424,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			throw new NotFoundHttpException('Not Found');
 		}
 
+
 		return $this->response($request, [
 			'title' => $action?->title ? $this->getExpressionLanguage()->evaluate($action->title, [
 				'object' => $object,
@@ -493,30 +496,35 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 				$messages = [
 					'success' => [
-						$this->getEntityType()->getSuccessMessage() ?: 'Item was saved successfully'
+						$this->getEntityType()->getSuccessMessage() ?: 'Item was saved successfully',
 					],
 				];
 
 				$redirect = [
 					'route' => $this->router->getRouteCollection()->get($this->getRoute('edit')),
 					'parameters' => [
-						'id' => $this->getEntityClassMetadata()->getIdentifierValues($object)[$entityClassIdentifierFieldName] ?? null,
-					]
+						'id' => $this->getEntityClassMetadata()->getIdentifierValues(
+								$object
+							)[$entityClassIdentifierFieldName] ?? null,
+					],
 				];
 
 				if ($request->getPreferredFormat() === 'html') {
-					return new RedirectResponse($this->router->generate($this->getRoute('edit'), $redirect['parameters']));
+					return new RedirectResponse(
+						$this->router->generate($this->getRoute('edit'), $redirect['parameters'])
+					);
 				}
 			} else {
 				$responseStatus = 400;
 
 				$messages = [
-					'error' => array_map(fn(FormError $error) => $error->getMessage(), iterator_to_array($form->getErrors()))
+					'error' => array_map(fn(FormError $error) => $error->getMessage(),
+						iterator_to_array($form->getErrors())),
 				];
 			}
 		}
 
-		if($request->hasSession()) {
+		if ($request->hasSession()) {
 			foreach ($messages as $messageType => $messageList) {
 				$request->getSession()->getFlashBag()->add($messageType, implode(' ', $messageList));
 			}
@@ -529,13 +537,13 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			'object' => $object,
 			'form' => [
 				'modify' => [
-					'view' => $form->createView()
+					'view' => $form->createView(),
 				],
 			],
 			'messages' => $messages,
 			...(isset($redirect) ? [
-				'redirect' => $redirect
-			]: [])
+				'redirect' => $redirect,
+			] : []),
 		], $responseStatus, defaultTemplate: 'edit');
 	}
 
@@ -837,7 +845,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	{
 		return array_reduce($this->entity->sort ?: [], fn(array $result, EntitySort $sort) => [
 			...$result,
-			$sort->field => $sort->sort->value
+			$sort->field => $sort->sort->value,
 		], []);
 	}
 
@@ -845,9 +853,14 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		Request $request = null,
 		EntityColumnViewGroupEnum|string $viewGroup = null
 	): array {
-		$sorting = array_merge($this->getDefaultSort(), $request->query->all('sort') ?: array_filter($request->getSession()->get(
-			$this->getAlias().'.sort', []
-		)));
+		$sorting = array_merge(
+			$this->getDefaultSort(),
+			$request->query->all('sort') ?: array_filter(
+				$request->getSession()->get(
+					$this->getAlias().'.sort', []
+				)
+			)
+		);
 
 		$sorting = array_filter($sorting, fn($v) => in_array(strtoupper($v), ['ASC', 'DESC']));
 		$columns = array_reduce(
@@ -1004,20 +1017,36 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 		$filters = array_filter($this->getFilters($request), fn(mixed $value) => $value !== null && $value !== '');
 		$sortingFields = array_filter($this->prepareSorting($request, $viewGroup));
+		$columnFieldsMapping = $this->getEntityColumnToFieldMapping();
+
+		$pathParameters = array_intersect_key($request->attributes->all(), array_flip(array_filter($request->attributes->keys(), fn(string $key) => !str_starts_with($key, '_'))));
+		foreach ($pathParameters as $pathParameter => $pathParameterValue) {
+			if(!isset($columnFieldsMapping[$pathParameter]))
+				continue;
+
+			$parameter = sprintf('pp%s', $pathParameter);
+
+			$query->andWhere(
+				sprintf(
+					'%s.%s = :%s',
+					self::ENTITY_ROOT_ALIAS,
+					$columnFieldsMapping[$pathParameter],
+					$parameter
+				)
+			)->setParameter($parameter, $pathParameterValue);
+		}
 
 		foreach (
-			$this->buildColumns($viewGroup) as [
-				'entityAlias' => $entityAlias,
-				'entityField' => $entityField,
-				'relations' => $relations,
-				'type' => $type,
-				'column' => $column,
-				'canSelect' => $canSelect
-			]
+			$this->buildColumns($viewGroup, true) as ['entityAlias' => $entityAlias,
+			'entityField' => $entityField,
+			'relations' => $relations,
+			'type' => $type,
+			'column' => $column,
+			'canSelect' => $canSelect]
 		) {
-			$hasFilterApplied = isset($filters[$column->getAlias()]) && false !== $column->getSearchable();
+			$isFilterApplied = isset($filters[$column->getAlias()]) && false !== $column->getSearchable();
 
-			if ($canSelect || $hasFilterApplied) {
+			if ($canSelect || $isFilterApplied) {
 				foreach ($relations as $relation) {
 					$query->leftJoin($relation['entity'].'.'.$relation['field'], $relation['alias']);
 				}
@@ -1034,7 +1063,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				);
 			}
 
-			if ($hasFilterApplied) {
+			if ($isFilterApplied) {
 				$value = $filters[$column->getAlias()];
 				$type = ($column->getSearchable() instanceof SearchableOptions ? $column->getSearchable()->getType(
 				) : null) ?? $type ?? Types::STRING;
@@ -1178,6 +1207,27 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return $this->getEntityClassMetadata()->getFieldMapping(lcfirst($field));
 	}
 
+	public function getEntityColumnToFieldMapping(): array {
+		return array_merge(
+			array_combine(
+				$this->getEntityClassMetadata()->getColumnNames(),
+				$this->getEntityClassMetadata()->getFieldNames()
+			),
+			array_reduce(
+				$this->getEntityClassMetadata()->getAssociationNames(),
+				function (array $result, $associationName) {
+					$association = $this->getEntityClassMetadata()->getAssociationMapping($associationName);
+					foreach ($association['joinColumns'] ?? [] as $joinColumn) {
+						$result[$joinColumn['name']] = $associationName;
+					}
+
+					return $result;
+				},
+				[]
+			)
+		);
+	}
+
 	/**
 	 * @throws Exception
 	 */
@@ -1274,7 +1324,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 									$reflectionMethod,
 									$entityFQCN
 								) {
-									/** @var \Symfony\Component\Routing\Attribute\Route|null $routeAttribute */
+									/** @var Route|null $routeAttribute */
 									$routeAttribute = ($reflectionMethod->getAttributes(
 										Route::class
 									)[0] ?? null)?->newInstance();
@@ -1316,15 +1366,15 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 									/** @var Action $actionInstance */
 									$actionInstance = $actionRefAttribute->newInstance();
-									$action = ($actionInstance->action ?: $reflectionMethod->name);
-									$title = ($actionInstance->action ?: StringHelper::titlize(
+									$action = ($actionInstance->name ?: $reflectionMethod->name);
+									$title = ($actionInstance->name ?: StringHelper::titlize(
 										ucfirst($reflectionMethod->name)
 									));
 									$routeName = $routeAttribute?->getName(
 									) ?: ($reflectionClass->name.'::'.$reflectionMethod->name);
 
 									$actionInstance
-										->setAction($action)
+										->setName($action)
 										->setTitle($title)
 										->setRoute($routeName);
 

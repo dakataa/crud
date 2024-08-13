@@ -9,19 +9,19 @@
                 <ul class="pagination pagination-sm">
                     {% if (data.meta.page > 1) and (data.meta.totalPages > 5) %}
                         <li class="page-item">
-                            <a title="{{ 'first page'|trans }}" {% if ajax is defined %}data-toggle="ajax" data-target="{{ ajax }}" data-mode="replace"{% endif %} href="{{ url(route, params|default({})|merge({page: 1})) }}" class="page-link">
+                            <a title="{{ 'first page'|trans }}" {% if ajax is defined %}data-toggle="ajax" data-target="{{ ajax }}" data-mode="replace"{% endif %} href="{{ generatePath(route, params|default({})|merge({page: 1})) }}" class="page-link">
                                 &laquo;
                             </a>
                         </li>
                     {% endif %}
                     {% for page in data.meta.links %}
                         <li class="page-item{% if page == data.meta.page %} active{% endif %}">
-                            <a {% if ajax is defined %}data-toggle="ajax" data-target="{{ ajax }}" data-mode="replace"{% endif %} href="{{ url(route, params|default({})|merge({page: page})) }}" class="page-link">{{ page }}</a>
+                            <a {% if ajax is defined %}data-toggle="ajax" data-target="{{ ajax }}" data-mode="replace"{% endif %} href="{{ generatePath(route, params|default({})|merge({page: page})) }}" class="page-link">{{ page }}</a>
                         </li>
                     {% endfor %}
                     {% if (data.meta.page < totalPages) and (totalPages > 5) %}
                         <li class="page-item">
-                            <a title="{{ 'last page'|trans }}" {% if ajax is defined %}data-toggle="ajax" data-target="{{ ajax }}" data-mode="replace" data-changeurl="true"{% endif %} href="{{ url(route, params|default({})|merge({page: totalPages})) }}" class="page-link">
+                            <a title="{{ 'last page'|trans }}" {% if ajax is defined %}data-toggle="ajax" data-target="{{ ajax }}" data-mode="replace" data-changeurl="true"{% endif %} href="{{ generatePath(route, params|default({})|merge({page: totalPages})) }}" class="page-link">
                                 &raquo;
                             </a>
                         </li>

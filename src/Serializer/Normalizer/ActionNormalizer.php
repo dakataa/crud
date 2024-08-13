@@ -26,7 +26,7 @@ class ActionNormalizer implements NormalizerInterface, NormalizerAwareInterface
 	{
 		$route = $this->router->getRouteCollection()->get($object->getRoute());
 		return [
-			'action' => $object->getAction(),
+			'name' => $object->getName(),
 			'title' => $object->getTitle(),
 			'object' => $object->getObject(),
 			'route' => $this->normalizer->normalize($route)

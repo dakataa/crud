@@ -45,7 +45,7 @@ class GeneralController
 		]);
 
 		return new JsonResponse(
-			$serializer->normalize(iterator_to_array($actionCollection->getItems(), false), context: [
+			$serializer->normalize(iterator_to_array($actionCollection->getItems()), context: [
 				AbstractNormalizer::CIRCULAR_REFERENCE_HANDLER => fn() => null,
 			])
 		);

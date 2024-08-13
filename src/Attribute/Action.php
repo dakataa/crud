@@ -8,21 +8,21 @@ use Attribute;
 class Action
 {
 	public function __construct(
-		public ?string $action = null,
+		public ?string $name = null,
 		public ?string $title = null,
 		public ?string $route = null,
 		public ?bool $object = false
 	) {
 	}
 
-	public function getAction(): ?string
+	public function getName(): ?string
 	{
-		return $this->action;
+		return $this->name;
 	}
 
-	public function setAction(?string $action): Action
+	public function setName(?string $name): Action
 	{
-		$this->action = $action;
+		$this->name = $name;
 
 		return $this;
 	}

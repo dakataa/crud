@@ -78,7 +78,10 @@ class CrudExtension extends AbstractExtension
 			throw new Exception('Invalid Argument "$parameters" its should be array.');
 		}
 
-		return $this->router->generate($this->getRoute($method, $controllerFqcn), $parameters);
+		$requestAttributes = $this->requestStack->getMainRequest()->attributes;
+		$pathParameters = array_intersect_key($requestAttributes->all(), array_flip(array_filter($requestAttributes->keys(), fn(string $key) => !str_starts_with($key, '_'))));
+
+		return $this->router->generate($this->getRoute($method, $controllerFqcn), array_merge($pathParameters, $parameters));
 	}
 
 	public function getControllerClass(): string
