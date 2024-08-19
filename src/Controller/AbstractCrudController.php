@@ -424,7 +424,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			throw new NotFoundHttpException('Not Found');
 		}
 
-
 		return $this->response($request, [
 			'title' => $action?->title ? $this->getExpressionLanguage()->evaluate($action->title, [
 				'object' => $object,
@@ -547,16 +546,20 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		], $responseStatus, defaultTemplate: 'edit');
 	}
 
-	#[Route(path: '/{id}/delete', requirements: ['id' => '\d+'], methods: ['DELETE'])]
+	#[Route(path: '/{id}/delete', requirements: ['id' => '\d+'], methods: ['DELETE', 'OPTIONS'])]
 	#[Action(object: true)]
 	public function delete(Request $request, int $id): Response
 	{
+		if($request->isMethod(Request::METHOD_OPTIONS)) {
+			return new Response;
+		}
+
 		$object = $this->getEntityRepository()->find($id);
 		if ($object) {
 			$this->batchDelete($request, [$object]);
 		}
 
-		return new RedirectResponse($this->router->generate($this->getRoute('list'), $request->query->all()));
+		return new RedirectResponse($this->router->generate($this->getRoute('list'), $request->request->all()));
 	}
 
 	protected function handleBatch(Request $request): Response|FormInterface
