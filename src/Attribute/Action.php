@@ -11,7 +11,9 @@ class Action
 		public ?string $name = null,
 		public ?string $title = null,
 		public ?string $route = null,
-		public ?bool $object = false
+		public ?bool $object = false,
+		public ?string $namespace = null,
+		public ?string $entity = null
 	) {
 	}
 
@@ -59,6 +61,29 @@ class Action
 	public function setRoute(?string $route): Action
 	{
 		$this->route = $route;
+
+		return $this;
+	}
+
+	public function getNamespace(): ?string
+	{
+		return $this->namespace;
+	}
+
+	public function setNamespace(?string $namespace): Action
+	{
+		$this->namespace = $namespace;
+
+		return $this;
+	}
+
+	public function getEntity(): ?string
+	{
+		return $this->entity;
+	}
+	public function setEntity(?string $entity): Action
+	{
+		$this->entity = $entity;
 
 		return $this;
 	}

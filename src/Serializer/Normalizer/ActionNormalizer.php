@@ -4,6 +4,7 @@ namespace Dakataa\Crud\Serializer\Normalizer;
 
 use Dakataa\Crud\Attribute\Action;
 use Symfony\Component\Routing\RouterInterface;
+use Symfony\Component\Serializer\Exception\ExceptionInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerAwareInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerAwareTrait;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
@@ -21,11 +22,14 @@ class ActionNormalizer implements NormalizerInterface, NormalizerAwareInterface
 	 * @param string|null $format
 	 * @param array $context
 	 * @return array
+	 * @throws ExceptionInterface
 	 */
 	public function normalize(mixed $object, ?string $format = null, array $context = []): array
 	{
 		$route = $this->router->getRouteCollection()->get($object->getRoute());
 		return [
+			'entity' => $object->getEntity(),
+			'namespace' => $object->getNamespace(),
 			'name' => $object->getName(),
 			'title' => $object->getTitle(),
 			'object' => $object->getObject(),
