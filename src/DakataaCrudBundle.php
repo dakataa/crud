@@ -35,9 +35,6 @@ class DakataaCrudBundle extends AbstractBundle
 
 	public function loadExtension(array $config, ContainerConfigurator $container, ContainerBuilder $builder): void
 	{
-//		$loader = new AttributeRouteControllerLoader;
-//		$loader->load(NavigationController::class);
-
 		$container
 			->services()
 			->set(CrudExtension::class, CrudExtension::class)
@@ -116,7 +113,6 @@ class DakataaCrudBundle extends AbstractBundle
 				$definition->addTag('dakataa.crud.navigation');
 			}
 		);
-
 	}
 
 	public function prependExtension(
