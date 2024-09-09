@@ -20,7 +20,7 @@
     "symfony/http-kernel": "^7.0",
     "symfony/form": "^7.0",
     "symfony/validator": "^7.0",
-    "doctrine/orm": "^2.1",
+    "doctrine/orm": ">=2.10.0",
     "phpoffice/phpspreadsheet": "^1.29",
     "twig/twig": "^3.8",
     "symfony/framework-bundle": "^7.0",
