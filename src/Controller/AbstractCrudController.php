@@ -93,6 +93,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	protected ?ClassMetadata $entityClassMetadata = null;
 	protected ?array $actions = null;
 
+	protected array $forms = [];
+
 	private ?ExpressionLanguage $expressionLanguage = null;
 
 	protected function getPHPAttributes(string $attributeFQCN, string $method = null): array
@@ -142,7 +144,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 	}
 
-	public function getEntity(): Entity
+	final public function getEntity(): Entity
 	{
 		if (!$this->entity) {
 			throw new Exception(
@@ -264,13 +266,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			return $batchForm;
 		}
 
-		$filterData = $request->get('filter', $this->getFilters($request));
-		$filterForm = $this
-			->getFilterForm($request)
-			->submit($filterData);
-
-		$this->setFilters($request, $filterForm->isValid() ? $filterData : []);
-
 		$sorting = $this->prepareSorting($request);
 
 		$query = $this
@@ -294,7 +289,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			],
 			'form' => [
 				'filter' => [
-					'view' => $filterForm->createView(),
+					'view' => $this->getFilterForm($request)->createView(),
 				],
 				'batch' => [
 					'view' => $this->getBatchForm($request)->createView(),
@@ -702,8 +697,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			->formFactory
 			->createNamedBuilder('batch', options: [
 				...($this->parameterBag->get('form.type_extension.csrf.enabled') ? ['csrf_protection' => false] : []),
-			])
-			->setMethod('POST');
+			]);
+
+		$form->setMethod('POST');
 
 		$form
 			->add('ids', CollectionType::class, [
@@ -773,80 +769,83 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	 */
 	protected function getFilterForm(Request $request): FormInterface
 	{
-		$form = $this->formFactory->createNamedBuilder(
-			'filter',
-			FormType::class,
-			null,
-			[
-				...($this->parameterBag->get('form.type_extension.csrf.enabled') ? ['csrf_protection' => false] : []),
-			]
-		);
+		if(empty($this->forms['filter'])) {
+			$form = $this->formFactory->createNamedBuilder(
+				'filter',
+				FormType::class,
+				null,
+				[
+					...($this->parameterBag->get(
+						'form.type_extension.csrf.enabled'
+					) ? ['csrf_protection' => false] : []),
+				]
+			)->setMethod(Request::METHOD_GET);
 
-		$form
-			->setMethod(Request::METHOD_GET);
+			foreach ($this->buildColumns(searchable: true) as $columnData) {
+				[
+					'fqcn' => $fqcn,
+					'type' => $type,
+					'column' => $column,
+				] = $columnData;
 
-		foreach ($this->buildColumns(searchable: true) as $columnData) {
-			[
-				'fqcn' => $fqcn,
-				'type' => $type,
-				'column' => $column,
-			] = $columnData;
-
-			$formFieldKey = $column->getAlias();
-			$columnOptions = [
-				'label' => $column->getLabel(),
-			];
-
-			$entityType = $type ?? TextType::class;
-
-			if ($column->getSearchable() instanceof SearchableOptions) {
+				$formFieldKey = $column->getAlias();
 				$columnOptions = [
-					...($column->getSearchable()->getOptions() ?: []),
-					...$columnOptions,
+					'label' => $column->getLabel(),
 				];
 
-				$entityType = $column->getSearchable()->getType() ?: $entityType;
+				$entityType = $type ?? TextType::class;
+
+				if ($column->getSearchable() instanceof SearchableOptions) {
+					$columnOptions = [
+						...($column->getSearchable()->getOptions() ?: []),
+						...$columnOptions,
+					];
+
+					$entityType = $column->getSearchable()->getType() ?: $entityType;
+				}
+
+				switch ($entityType) {
+					case Types::INTEGER:
+					case Types::BIGINT:
+					case Types::TEXT:
+					case Types::STRING:
+					case Types::DECIMAL:
+					case Types::SMALLINT:
+						$form->add($formFieldKey, TextType::class, $columnOptions);
+						break;
+					case Types::DATE_MUTABLE:
+					case Types::DATETIME_MUTABLE:
+						$form->add($formFieldKey, DateType::class, array_merge(['placeholder' => ''], $columnOptions));
+						break;
+					case Types::BOOLEAN:
+						$form->add($formFieldKey, CheckboxType::class, $columnOptions);
+						break;
+					default:
+						if (empty($entityType) || !is_string($entityType)) {
+							$entityType = null;
+						}
+
+						$form->add(
+							$formFieldKey,
+							class_exists($entityType) && is_a(
+								$entityType,
+								FormTypeInterface::class,
+								true
+							) ? $entityType : TextType::class,
+							$columnOptions
+						);
+				}
 			}
 
-			switch ($entityType) {
-				case Types::INTEGER:
-				case Types::BIGINT:
-				case Types::TEXT:
-				case Types::STRING:
-				case Types::DECIMAL:
-				case Types::SMALLINT:
-					$form->add($formFieldKey, TextType::class, $columnOptions);
-					break;
-				case Types::DATE_MUTABLE:
-				case Types::DATETIME_MUTABLE:
-					$form->add($formFieldKey, DateType::class, array_merge(['placeholder' => ''], $columnOptions));
-					break;
-				case Types::BOOLEAN:
-					$form->add($formFieldKey, CheckboxType::class, $columnOptions);
-					break;
-				default:
-					if (empty($entityType) || !is_string($entityType)) {
-						$entityType = null;
-					}
-
-					$form->add(
-						$formFieldKey,
-						class_exists($entityType) && is_a(
-							$entityType,
-							FormTypeInterface::class,
-							true
-						) ? $entityType : TextType::class,
-						$columnOptions
-					);
-			}
+			$this->forms['filter'] = $form->getForm()->handleRequest($request);
 		}
 
-		return $form->getForm();
+		return $this->forms['filter'];
 	}
 
 	protected function getDefaultSort(): ?array
 	{
-		return array_reduce($this->entity->sort ?: [], fn(array $result, EntitySort $sort) => [
+		return array_reduce($this->getEntity()->sort ?: [], fn(array $result, EntitySort $sort) => [
 			...$result,
 			$sort->field => $sort->sort->value,
 		], []);
@@ -901,19 +900,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 		return $limit;
 	}
-
-	protected function getFilters(Request $request): array
-	{
-		return $request->getSession()->get($this->getAlias().'.filters', []);
-	}
-
-	protected function setFilters(Request $request, array $filters): self
-	{
-		$request->getSession()->set($this->getAlias().'.filters', $filters);
-
-		return $this;
-	}
-
 
 	protected function buildCustomQuery(Request $request, QueryBuilder $query): self
 	{
@@ -1018,7 +1004,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			$query->groupBy($groupByField);
 		}
 
-		$filters = array_filter($this->getFilters($request), fn(mixed $value) => $value !== null && $value !== '');
+		$filters = $this->getFilterForm($request)->getData();
 		$sortingFields = array_filter($this->prepareSorting($request, $viewGroup));
 		$columnFieldsMapping = $this->getEntityColumnToFieldMapping();
 
@@ -1047,7 +1033,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			'column' => $column,
 			'canSelect' => $canSelect]
 		) {
-			$isFilterApplied = isset($filters[$column->getAlias()]) && false !== $column->getSearchable();
+			$isFilterApplied = $filters && !empty($filters[$column->getAlias()]) && false !== $column->getSearchable();
 
 			if ($canSelect || $isFilterApplied) {
 				foreach ($relations as $relation) {
@@ -1068,8 +1054,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 			if ($isFilterApplied) {
 				$value = $filters[$column->getAlias()];
-				$type = ($column->getSearchable() instanceof SearchableOptions ? $column->getSearchable()->getType(
-				) : null) ?? $type ?? Types::STRING;
+				$type = ($column->getSearchable() instanceof SearchableOptions ? $column->getSearchable()->getType() : null) ?? $type ?? Types::STRING;
 				$parameter = sprintf('p%s', $column->getAlias());
 
 				switch ($type) {
@@ -1148,13 +1133,13 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	): Generator {
 		$viewGroup = (is_string($viewGroup) ? EntityColumnViewGroupEnum::tryFrom($viewGroup) : null) ?: $viewGroup;
 
-		if (empty($this->entity->columns)) {
-			$this->entity->columns = array_map(fn(string $fieldName) => new Column($fieldName),
+		if (empty($this->getEntity()->columns)) {
+			$this->getEntity()->columns = array_map(fn(string $fieldName) => new Column($fieldName),
 				$this->entityManager->getClassMetadata($this->getEntity()->getFqcn())->getFieldNames());
 		}
 
 		$columns = array_filter(
-			$this->entity->columns,
+			$this->getEntity()->columns,
 			fn(Column $c) => (
 					!$c->getGroup() ||
 					$c->getGroup() === $viewGroup
@@ -1309,9 +1294,12 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			$entityFQCN = $this->getEntity()->fqcn;
 			$reflectionClass = new ReflectionClass($this->getControllerClass());
 
+			$namespace = explode('\\', get_class($this));
+			$namespace = implode('/', array_map(fn(string $item) => lcfirst(preg_replace('/Controller$/i', '', $item)), array_splice($namespace, 2)));
+
 			$this->actions = array_reduce(
 				$reflectionClass->getMethods(),
-				function (array $result, ReflectionMethod $reflectionMethod) use ($reflectionClass, $entityFQCN) {
+				function (array $result, ReflectionMethod $reflectionMethod) use ($reflectionClass, $entityFQCN, $namespace) {
 					$actionAttributes = $reflectionMethod->getAttributes(Action::class);
 					if (empty($actionAttributes)) {
 						return $result;
@@ -1325,7 +1313,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 								function (ReflectionAttribute $actionRefAttribute) use (
 									$reflectionClass,
 									$reflectionMethod,
-									$entityFQCN
+									$entityFQCN,
+									$namespace
 								) {
 									/** @var Route|null $routeAttribute */
 									$routeAttribute = ($reflectionMethod->getAttributes(
@@ -1370,23 +1359,23 @@ abstract class AbstractCrudController implements CrudControllerInterface
 									/** @var Action $actionInstance */
 									$actionInstance = $actionRefAttribute->newInstance();
 									$action = ($actionInstance->name ?: $reflectionMethod->name);
-									$title = ($actionInstance->name ?: StringHelper::titlize(
-										ucfirst($reflectionMethod->name)
-									));
-									$routeName = $routeAttribute?->getName(
-									) ?: ($reflectionClass->name.'::'.$reflectionMethod->name);
+									$title = ($actionInstance->name ?: StringHelper::titlize(ucfirst($reflectionMethod->name)));
+									$routeName = $routeAttribute?->getName() ?: ($reflectionClass->name.'::'.$reflectionMethod->name);
 
 									$actionInstance
 										->setName($action)
 										->setTitle($title)
-										->setRoute($routeName);
+										->setRoute($routeName)
+										->setNamespace($namespace);
 
-									if (empty(
-										$reflectionMethod->getAttributes(
-											EntityType::class
-										)
-										) && empty($reflectionClass->getAttributes(EntityType::class))) {
-										return null;
+
+									switch ($action) {
+										case 'add':
+										case 'edit': {
+											if(null === $this->getEntityType()) {
+												return null;
+											}
+										}
 									}
 
 									return [

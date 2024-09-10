@@ -119,10 +119,14 @@ class DakataaCrudBundle extends AbstractBundle
 		ContainerConfigurator $container,
 		ContainerBuilder $builder
 	): void {
-		$builder->prependExtensionConfig('webpack_encore', [
-			'builds' => [
-				self::NAME => '%kernel.project_dir%/public/bundles/dakataacrud/assets',
-			],
+		$builder->prependExtensionConfig('framework', [
+			'assets' => [
+				'packages' => [
+					self::NAME => [
+						'json_manifest_path' => '%kernel.project_dir%/public/bundles/dakataacrud/assets/manifest.json'
+					]
+				]
+			]
 		]);
 	}
 }
