@@ -12,7 +12,7 @@
     {% endif %}
 {% endmacro %}
 {% macro filterList(form) %}
-    {% for formField in form.children|filter(formField => formField.vars.data is not null) %}
+    {% for formField in form.children|filter(formField => formField.vars.data) %}
         {% if formField.children|length %}
             {{ _self.filterList(formField) }}
         {% else %}
@@ -22,7 +22,7 @@
                 <small class="mb-2">{{ (formField.vars.label ?? formField.vars.name)|capitalize|trans }}</small>
                 <div class="btn btn-sm btn-primary me-1 mb-1">
                     {{ _self.displayFormFieldValue(formField) }}
-                    <a href="{{ generatePath('list', { filter: filterVars ?: '' }) }}" class="text-white">
+                    <a href="{{ generatePath('list', { filter: filterVars }) }}" class="text-white">
                         &times;
                     </a>
                 </div>
@@ -31,7 +31,7 @@
     {% endfor %}
 {% endmacro %}
 
-{% set hasFilters = form.filter.view.vars.data|default([])|filter(v => v is not null)|length %}
+{% set hasFilters = form.filter.view.vars.data|default([])|filter(v => v)|length %}
 {% set identifierField = entity.primaryColumn %}
 {% block body %}
     <div class="list">
@@ -52,8 +52,7 @@
 
                 {% if form.filter %}
                     <div class="btn-group btn-group-sm">
-                        <button type="button" class="btn btn-outline-secondary dropdown-toggle"
-                                data-bs-toggle="dropdown">
+                        <button type="button" class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
                             {{ 'Filter'|trans }}
                         </button>
 
@@ -104,7 +103,7 @@
                                     {% if column.sortable and attribute(sort, column.field) is defined %}
                                         {% set currentSortType = attribute(sort, column.field)|default(null) %}
                                         {% set nextSortType = (currentSortType ? (currentSortType == 'ASC' ? 'DESC' : null) : 'ASC') %}
-                                        <a href="{{ generatePath('list', { sort: (sort|default({}))|merge({(column.field): (nextSortType|default('')) }) }) }}">
+                                        <a href="{{ generatePath('list', { ...app.request.query.all, sort: (sort|default({}))|merge({(column.field): (nextSortType|default('')) }) }) }}">
                                             {% if (currentSortType) %}
                                                 {{ (currentSortType == 'ASC' ? '&uarr;':'&darr;') }}
                                             {% else %}

@@ -2,9 +2,6 @@ const Encore = require('@symfony/webpack-encore');
 const Webpack = require('webpack');
 const CssMinimizerPlugin = require('css-minimizer-webpack-plugin');
 const SpriteLoaderPlugin = require('svg-sprite-loader/plugin');
-const PurgeCssPlugin = require('purgecss-webpack-plugin');
-const path = require('path');
-const glob = require('glob-all');
 
 const ASSET_OUTPUT_PATH = 'public/assets/';
 const ASSET_PUBLIC_PATH = '/bundles/dakataacrud/assets';
@@ -19,7 +16,6 @@ Encore
 	.setManifestKeyPrefix('bundles/dakataacrud')
     .cleanupOutputBeforeBuild()
     .enableLessLoader()
-    .enableSassLoader()
     .disableSingleRuntimeChunk()
     .configureCssMinimizerPlugin((config) => {
         config.parallel = true;
@@ -60,12 +56,26 @@ Encore
             plainSprite: true
         })
     )
+	.addLoader({
+		test: /\.s[ac]ss$/i,
+		use: [
+			"style-loader",
+			"css-loader",
+			"less-loader",
+			{
+				loader: "sass-loader",
+				options: {
+					implementation: require('sass'),
+				},
+			},
+		],
+	})
     // .addPlugin(
     //     new SimplifyCssModulesPlugin()
     // )
-    .copyFiles([
-        {from: './src/assets/images', to: 'images/[path][name].[ext]'},
-    ])
+    // .copyFiles([
+    //     {from: './assets/images', to: 'images/[path][name].[ext]'},
+    // ])
     .configureBabel(function (config) {
         config.plugins.push(['@babel/plugin-proposal-class-properties'])
         config.plugins.push(['@babel/plugin-transform-runtime']);
