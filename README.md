@@ -20,47 +20,44 @@ You can use it as REST API or as Standard PHP Application.
    composer require dakataa/crud
    ```
 4. Create first controller.
-	Standard way:
-	```php
-    namespace App\Controller;
+   Standard way:
+   ```php
+   namespace App\Controller;
 
-	use App\Entity\Product;
-	use App\Form\ProductType;
-	use Dakataa\Crud\Attribute\EntityType;
-	use Dakataa\Crud\Controller\AbstractCrudController;
-	use Doctrine\ORM\QueryBuilder;
-	use Symfony\Component\HttpFoundation\Request;
-	
-    #[Route('/product')]
-	class ProductController extends AbstractCrudController
-	{
+   use App\Entity\Product;
+   use App\Form\ProductType;
+   use Dakataa\Crud\Attribute\Entity;	
+   use Dakataa\Crud\Attribute\EntityType;
+   use Dakataa\Crud\Controller\AbstractCrudController;
+   use Doctrine\ORM\QueryBuilder;
+   use Symfony\Component\HttpFoundation\Request;use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+   
+   #[Route('/product')]
+   #[Entity(Product::class)]
+   #[EntityType(ProductType::class)]
+   class ProductController extends AbstractCrudController
+   {
+   }
+   ```
 
-		public function getEntityClass(): string
-		{
-			return Product::class;
-		}
+   if you want to customize initial query. This method is called before query execution.
 
-		public function getEntityType(): ?EntityType
-		{
-			return new EntityType(ProductType::class);
-		}
-
-		public function buildCustomQuery(Request $request, QueryBuilder $query): AbstractCrudController
-		{
-			return parent::buildCustomQuery($request, $query);
-		}
-
-	}
+    ```php
+        public function buildCustomQuery(Request $request, QueryBuilder $query): AbstractCrudController
+        {
+           $query
+                ->andWhere('a.enabled = true');
+			
+           return $this;
+        }
     ```
-
-	with PHP Attributes
-
-	```php
-
-	```
  
-	with Make Command
+    with Make Command
 
-	```shell
+    ```shell
     php symfony crud:make:entity Product ProductType ProductController
-	```
+    ```
+ 
+## How to extend templates
+
+## How to ...

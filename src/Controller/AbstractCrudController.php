@@ -1368,6 +1368,16 @@ abstract class AbstractCrudController implements CrudControllerInterface
 										->setRoute($routeName)
 										->setNamespace($namespace);
 
+
+									switch ($action) {
+										case 'add':
+										case 'edit': {
+											if(null === $this->getEntityType()) {
+												return null;
+											}
+										}
+									}
+
 									return [
 										$action => $actionInstance,
 									];
