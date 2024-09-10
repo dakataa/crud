@@ -5,7 +5,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no"/>
     {% block stylesheets %}
-        <link href="{{ asset('bundles/dakataacrud/theme.css') }}" rel="stylesheet" type="text/css" />
+        <link href="{{ asset('bundles/dakataacrud/theme.css', 'dakataa_crud') }}" rel="stylesheet" type="text/css" />
     {% endblock %}
 </head>
 <body>
@@ -97,7 +97,7 @@
     </div>
 </div>
 
-<script type="text/javascript" src="{{ asset('bundles/dakataacrud/theme.js') }}"></script>
+<script type="text/javascript" src="{{ asset('bundles/dakataacrud/theme.js', 'dakataa_crud') }}"></script>
 
 {% block javascripts %}
     <script type="text/javascript">
