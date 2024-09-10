@@ -5,7 +5,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no"/>
     {% block stylesheets %}
-        {{ encore_entry_link_tags('theme', null, 'dakataa_crud') }}
+        <link href="{{ asset('bundles/dakataacrud/theme.css') }}" rel="stylesheet" type="text/css" />
     {% endblock %}
 </head>
 <body>
@@ -93,11 +93,12 @@
 </main>
 <div data-page-preloader="true" class="page-preloader">
     <div class="page-preloader-holder">
-        <div class="m-auto" style="width: 150px; height: 40px;" data-lottie="{{ asset('animations/spinner.json', 'img') }}"></div>
+        Loading...
     </div>
 </div>
 
-{{ encore_entry_script_tags('backend') }}
+<script type="text/javascript" src="{{ asset('bundles/dakataacrud/theme.js') }}"></script>
+
 {% block javascripts %}
     <script type="text/javascript">
         window.addEventListener('beforeunload', function () {
@@ -188,27 +189,6 @@
             }, {once: true});
         });
 
-    </script>
-
-    <script type="text/javascript">
-        document.liveQuery('[data-property] .preloader', (i) => {
-            let l = document.createElement('i')
-            l.setAttribute('data-lottie', '{{ asset('animations/spinner.json', 'img') }}');
-            i.append(l);
-        });
-
-        document.liveQuery('.loader', (i) => {
-            let loader = '{{ asset('animations/loading_dots_white.json', 'img') }}';
-            switch (i.dataset.color) {
-                case 'pink': {
-                    loader = '{{ asset('animations/loading_dots.json', 'img') }}';
-                    break;
-                }
-            }
-            let l = document.createElement('i')
-            l.setAttribute('data-lottie', loader);
-            i.append(l);
-        });
     </script>
 {% endblock %}
 </body>

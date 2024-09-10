@@ -142,7 +142,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 	}
 
-	public function getEntity(): Entity
+	final public function getEntity(): Entity
 	{
 		if (!$this->entity) {
 			throw new Exception(
@@ -846,7 +846,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 	protected function getDefaultSort(): ?array
 	{
-		return array_reduce($this->entity->sort ?: [], fn(array $result, EntitySort $sort) => [
+		return array_reduce($this->getEntity()->sort ?: [], fn(array $result, EntitySort $sort) => [
 			...$result,
 			$sort->field => $sort->sort->value,
 		], []);
@@ -1148,13 +1148,13 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	): Generator {
 		$viewGroup = (is_string($viewGroup) ? EntityColumnViewGroupEnum::tryFrom($viewGroup) : null) ?: $viewGroup;
 
-		if (empty($this->entity->columns)) {
-			$this->entity->columns = array_map(fn(string $fieldName) => new Column($fieldName),
+		if (empty($this->getEntity()->columns)) {
+			$this->getEntity()->columns = array_map(fn(string $fieldName) => new Column($fieldName),
 				$this->entityManager->getClassMetadata($this->getEntity()->getFqcn())->getFieldNames());
 		}
 
 		$columns = array_filter(
-			$this->entity->columns,
+			$this->getEntity()->columns,
 			fn(Column $c) => (
 					!$c->getGroup() ||
 					$c->getGroup() === $viewGroup
