@@ -12,13 +12,21 @@ You can use it as REST API or as Standard PHP Application.
 	php bin/console make:entity Product
 	php bin/console make:form ProductType Product
  	...
-    php bin/console make:migration
-    php bin/console doctrine:migrations:migrate
+	php bin/console make:migration
+	php bin/console doctrine:migrations:migrate
     ```
 3. Add package to composer
    ```shell
    composer require dakataa/crud
    ```
+
+   add routes without recipe in config/routes/annotation.yaml:
+	```yaml
+    dakataa_crud:
+		resource: '@DakataaCrudBundle/src/Controller'
+		type: attribute
+		prefix: /_crud
+    ```
 4. Create first controller.
    Standard way:
    ```php
@@ -43,13 +51,13 @@ You can use it as REST API or as Standard PHP Application.
    if you want to customize initial query. This method is called before query execution.
 
     ```php
-        public function buildCustomQuery(Request $request, QueryBuilder $query): AbstractCrudController
-        {
-           $query
-                ->andWhere('a.enabled = true');
+    public function buildCustomQuery(Request $request, QueryBuilder $query): AbstractCrudController
+    {
+        $query
+            ->andWhere('a.enabled = true');
 			
-           return $this;
-        }
+        return $this;
+   }
     ```
  
     with Make Command
