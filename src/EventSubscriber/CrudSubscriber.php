@@ -16,7 +16,8 @@ use Symfony\Component\Routing\RouterInterface;
 use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
-use Twig\Environment;
+use Dakataa\Crud\Twig\TemplateProvider;
+use Symfony\Component\Serializer\SerializerInterface;
 
 class CrudSubscriber
 {
@@ -26,8 +27,8 @@ class CrudSubscriber
 		protected EventDispatcherInterface $dispatcher,
 		protected EntityManagerInterface $entityManager,
 		protected ParameterBagInterface $parameterBag,
-		protected AuthorizationCheckerInterface $authorizationChecker,
-		protected ?Environment $twig = null
+		protected ?AuthorizationCheckerInterface $authorizationChecker = null,
+		protected ?TemplateProvider $templateProvider = null,
 	) {
 	}
 
@@ -58,8 +59,8 @@ class CrudSubscriber
 			$this->dispatcher,
 			$this->entityManager,
 			$this->parameterBag,
-			$this->twig,
-			$this->authorizationChecker
+			$this->authorizationChecker,
+			$this->templateProvider
 		) extends AbstractCrudController {
 
 			protected string $originClassName;
@@ -72,8 +73,8 @@ class CrudSubscriber
 				EventDispatcherInterface $dispatcher,
 				EntityManagerInterface $entityManager,
 				ParameterBagInterface $parameterBag,
-				?Environment $twig = null,
-				?AuthorizationCheckerInterface $authorizationChecker = null
+				?AuthorizationCheckerInterface $authorizationChecker = null,
+				?TemplateProvider $templateProvider = null,
 			) {
 				$this->originClassName = get_class($this->controllerEvent->getController()[0]);
 
@@ -83,8 +84,8 @@ class CrudSubscriber
 					$dispatcher,
 					$entityManager,
 					$parameterBag,
-					$twig,
-					authorizationChecker: $authorizationChecker
+					authorizationChecker: $authorizationChecker,
+					templateProvider: $templateProvider
 				);
 			}
 

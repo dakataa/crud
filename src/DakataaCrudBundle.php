@@ -10,8 +10,6 @@ use Dakataa\Crud\EventSubscriber\CrudSubscriber;
 use Dakataa\Crud\Service\ActionCollection;
 use Dakataa\Crud\Service\Navigation;
 use Dakataa\Crud\Service\RouteCollection;
-use Dakataa\Crud\Twig\Extension\CrudExtension;
-use Dakataa\Crud\Twig\Extension\NavigationExtension;
 use ReflectionClass;
 use Symfony\Component\Config\Definition\Configurator\DefinitionConfigurator;
 use Symfony\Component\DependencyInjection\ChildDefinition;
@@ -35,18 +33,6 @@ class DakataaCrudBundle extends AbstractBundle
 
 	public function loadExtension(array $config, ContainerConfigurator $container, ContainerBuilder $builder): void
 	{
-		$container
-			->services()
-			->set(CrudExtension::class, CrudExtension::class)
-			->tag('twig.extension')
-			->autowire();
-
-		$container
-			->services()
-			->set(NavigationExtension::class, NavigationExtension::class)
-			->tag('twig.extension')
-			->autowire();
-
 		$container
 			->services()
 			->set(Navigation::class, Navigation::class)
@@ -119,14 +105,6 @@ class DakataaCrudBundle extends AbstractBundle
 		ContainerConfigurator $container,
 		ContainerBuilder $builder
 	): void {
-		$builder->prependExtensionConfig('framework', [
-			'assets' => [
-				'packages' => [
-					self::NAME => [
-						'json_manifest_path' => '%kernel.project_dir%/public/bundles/dakataacrud/assets/manifest.json'
-					]
-				]
-			]
-		]);
+		$container->import($this->getPath().'/config/{routes}/*.{php,yaml}');
 	}
 }

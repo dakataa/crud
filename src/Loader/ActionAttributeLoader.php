@@ -6,14 +6,19 @@ namespace Dakataa\Crud\Loader;
 use Dakataa\Crud\Attribute\Action;
 use Dakataa\Crud\Attribute\Entity;
 use Dakataa\Crud\Utils\StringHelper;
-use Exception;
 use Generator;
 use ReflectionClass;
 use ReflectionMethod;
-use Symfony\Component\Routing\Annotation\Route;
+use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Routing\RouterInterface;
 
 class ActionAttributeLoader
 {
+
+	public function __construct(protected RouterInterface $router)
+	{
+
+	}
 
 	public function load(mixed $controllerFQCN, ?string $attribute = null): Generator
 	{
@@ -33,6 +38,13 @@ class ActionAttributeLoader
 				Route::class
 			)[0] ?? null)?->newInstance();
 
+			if(!$routeAttribute) {
+				$routeName = $controllerReflectionClass->name.'::'.$reflectionMethod->name;
+				if(null !== $route = $this->router->getRouteCollection()->get($routeName)) {
+					$routeAttribute = new Route($route->getPath(), $routeName, methods: $route->getMethods());
+				}
+			}
+
 			foreach ($reflectionMethod->getAttributes(Action::class) as $reflectionAttribute) {
 				/** @var Action $actionInstance */
 				$actionInstance = $reflectionAttribute->newInstance();
@@ -40,12 +52,10 @@ class ActionAttributeLoader
 				$title = ($actionInstance->name ?: StringHelper::titlize(
 					ucfirst($reflectionMethod->name)
 				));
-				$routeName = $routeAttribute?->getName() ?: ($controllerReflectionClass->name.'::'.$reflectionMethod->name);
-
 				$actionInstance
 					->setName($name)
 					->setTitle($title)
-					->setRoute($routeName)
+					->setRoute($routeAttribute)
 					->setEntity($entity)
 					->setNamespace($controller);
 
