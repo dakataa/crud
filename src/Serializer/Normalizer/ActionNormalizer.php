@@ -26,7 +26,7 @@ class ActionNormalizer implements NormalizerInterface, NormalizerAwareInterface
 	 */
 	public function normalize(mixed $object, ?string $format = null, array $context = []): array
 	{
-		$route = $this->router->getRouteCollection()->get($object->getRoute());
+		$route = $this->router->getRouteCollection()->get($object->getRoute()->getName());
 		return [
 			'entity' => $object->getEntity(),
 			'namespace' => $object->getNamespace(),

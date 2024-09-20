@@ -3,6 +3,7 @@
 namespace Dakataa\Crud\Attribute;
 
 use Attribute;
+use Symfony\Component\Routing\Attribute\Route;
 
 #[Attribute(Attribute::TARGET_METHOD | Attribute::TARGET_CLASS)]
 class Action
@@ -10,7 +11,7 @@ class Action
 	public function __construct(
 		public ?string $name = null,
 		public ?string $title = null,
-		public ?string $route = null,
+		public ?Route $route = null,
 		public ?bool $object = false,
 		public ?string $namespace = null,
 		public ?string $entity = null
@@ -53,12 +54,12 @@ class Action
 		return $this;
 	}
 
-	public function getRoute(): ?string
+	public function getRoute(): ?Route
 	{
 		return $this->route;
 	}
 
-	public function setRoute(?string $route): Action
+	public function setRoute(?Route $route): Action
 	{
 		$this->route = $route;
 

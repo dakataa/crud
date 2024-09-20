@@ -32,6 +32,7 @@ use Doctrine\Persistence\Mapping\ClassMetadata;
 use Doctrine\Persistence\ObjectRepository;
 use Exception;
 use Generator;
+use InvalidArgumentException;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Csv;
 use PhpOffice\PhpSpreadsheet\Writer\Html;
@@ -496,7 +497,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				];
 
 				$redirect = [
-					'route' => $this->router->getRouteCollection()->get($this->getRoute('edit')),
+					'route' => $this->router->getRouteCollection()->get($this->getRoute('edit')->getName()),
 					'parameters' => [
 						'id' => $this->getEntityClassMetadata()->getIdentifierValues(
 								$object
@@ -506,7 +507,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 				if ($request->getPreferredFormat() === 'html') {
 					return new RedirectResponse(
-						$this->router->generate($this->getRoute('edit'), $redirect['parameters'])
+						$this->router->generate($this->getRoute('edit')->getName(), $redirect['parameters'])
 					);
 				}
 			} else {
@@ -555,7 +556,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			$this->batchDelete($request, [$object]);
 		}
 
-		return new RedirectResponse($this->router->generate($this->getRoute('list'), $request->request->all()));
+		return new RedirectResponse($this->router->generate($this->getRoute('list')->getName(), $request->request->all()));
 	}
 
 	protected function handleBatch(Request $request): Response|FormInterface
@@ -1242,7 +1243,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return method_exists($this, $method);
 	}
 
-	protected function getRoute(string $method = null): string
+	protected function getRoute(string $method = null): Route
 	{
 		$mappedRoute = $this->getMappedRoutes()[$method] ?? null;
 
@@ -1254,7 +1255,11 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			throw new NotFoundHttpException(sprintf('Missing Route "%s"', $method));
 		}
 
-		return static::class.'::'.$method;
+		$routeName = static::class.'::'.$method;
+		if(null === $route = $this->router->getRouteCollection()->get($routeName))
+			throw new NotFoundHttpException(sprintf('Route "%s" does not exist', $routeName));
+
+		return new Route($route->getPath(), $routeName, $route->getMethods());
 	}
 
 	public function getActions(): array
@@ -1330,11 +1335,14 @@ abstract class AbstractCrudController implements CrudControllerInterface
 									$action = ($actionInstance->name ?: $reflectionMethod->name);
 									$title = ($actionInstance->name ?: StringHelper::titlize(ucfirst($reflectionMethod->name)));
 									$routeName = $routeAttribute?->getName() ?: ($reflectionClass->name.'::'.$reflectionMethod->name);
+									if(null !== $route = $this->router->getRouteCollection()->get($routeName)) {
+										$routeAttribute = new Route($route->getPath(), $routeName, methods: $route->getMethods());
+									}
 
 									$actionInstance
 										->setName($action)
 										->setTitle($title)
-										->setRoute($routeName)
+										->setRoute($routeAttribute)
 										->setNamespace($namespace);
 
 
