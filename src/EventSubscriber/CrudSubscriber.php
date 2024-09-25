@@ -17,7 +17,6 @@ use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Dakataa\Crud\Twig\TemplateProvider;
-use Symfony\Component\Serializer\SerializerInterface;
 
 class CrudSubscriber
 {
