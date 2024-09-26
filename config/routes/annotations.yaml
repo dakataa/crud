@@ -1,0 +1,4 @@
+crud:
+  resource: '@DakataaCrudBundle/src/Controller'
+  type: attribute
+  prefix: /_crud

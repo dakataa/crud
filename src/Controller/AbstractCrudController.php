@@ -17,6 +17,7 @@ use Dakataa\Crud\Serializer\Normalizer\ColumnNormalizer;
 use Dakataa\Crud\Serializer\Normalizer\FormErrorNormalizer;
 use Dakataa\Crud\Serializer\Normalizer\FormViewNormalizer;
 use Dakataa\Crud\Serializer\Normalizer\RouteNormalizer;
+use Dakataa\Crud\Service\ActionCollection;
 use Dakataa\Crud\Utils\Doctrine\Paginator;
 use Dakataa\Crud\Utils\StringHelper;
 use Dakataa\Crud\Twig\TemplateProvider;
@@ -118,6 +119,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		protected EventDispatcherInterface $dispatcher,
 		protected EntityManagerInterface $entityManager,
 		protected ParameterBagInterface $parameterBag,
+		protected ActionCollection $actionCollection,
 		protected ?SerializerInterface $serializer = null,
 		protected ?AuthorizationCheckerInterface $authorizationChecker = null,
 		protected ?TemplateProvider $templateProvider = null,
@@ -298,7 +300,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				],
 			],
 			'sort' => $sorting,
-			'action' => array_filter($this->getActions(), fn(Action $action) => !in_array($action->name, ['list'])),
+			'action' => iterator_to_array($this->actionCollection->load($this->getControllerClass(), $this->getEntity()->fqcn)),
 		], defaultTemplate: 'list');
 	}
 
@@ -1232,25 +1234,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return $this->entityManager->getRepository($this->getEntity()->getFqcn());
 	}
 
-
-	protected function getMappedRoutes(): array
-	{
-		return array_map(fn(Action $action) => $action->route, $this->getActions());
-	}
-
-	protected function hasRoute(string $method): bool
-	{
-		return method_exists($this, $method);
-	}
-
 	protected function getRoute(string $method = null): Route
 	{
-		$mappedRoute = $this->getMappedRoutes()[$method] ?? null;
-
-		if (null !== $mappedRoute) {
-			return $mappedRoute;
-		}
-
 		if (!method_exists($this, $method)) {
 			throw new NotFoundHttpException(sprintf('Missing Route "%s"', $method));
 		}
@@ -1264,111 +1249,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 	public function getActions(): array
 	{
-		if (!$this->actions) {
-			$entityFQCN = $this->getEntity()->fqcn;
-			$reflectionClass = new ReflectionClass($this->getControllerClass());
-
-			$namespace = explode('\\', get_class($this));
-			$namespace = implode('/', array_map(fn(string $item) => lcfirst(preg_replace('/Controller$/i', '', $item)), array_splice($namespace, 2)));
-
-			$this->actions = array_reduce(
-				$reflectionClass->getMethods(),
-				function (array $result, ReflectionMethod $reflectionMethod) use ($reflectionClass, $entityFQCN, $namespace) {
-					$actionAttributes = $reflectionMethod->getAttributes(Action::class);
-					if (empty($actionAttributes)) {
-						return $result;
-					}
-
-					return array_merge(
-						$result,
-						...
-						array_filter(
-							array_map(
-								function (ReflectionAttribute $actionRefAttribute) use (
-									$reflectionClass,
-									$reflectionMethod,
-									$entityFQCN,
-									$namespace
-								) {
-									/** @var Route|null $routeAttribute */
-									$routeAttribute = ($reflectionMethod->getAttributes(
-										Route::class
-									)[0] ?? null)?->newInstance();
-
-									/** @var IsGranted[] $isGrantedAttributes */
-									$isGrantedAttributes = array_map(
-										fn(ReflectionAttribute $refAttribute) => $refAttribute->newInstance(),
-										$reflectionMethod->getAttributes(IsGranted::class)
-									);
-
-									if ($entityFQCN) {
-										/** @var string[] $entityAttributesFQCN */
-										$entityAttributesFQCN = array_map(
-											fn(ReflectionAttribute $refAttribute) => $refAttribute->newInstance()->fqcn,
-											$reflectionMethod->getAttributes(Entity::class)
-										);
-
-										if (empty($entityAttributesFQCN)) {
-											$entityAttributesFQCN = array_map(
-												fn(ReflectionAttribute $refAttribute) => $refAttribute->newInstance(
-												)->fqcn,
-												$reflectionClass->getAttributes(Entity::class)
-											);
-										}
-
-										if (empty($entityAttributesFQCN) || !in_array(
-												$entityFQCN,
-												$entityAttributesFQCN
-											)) {
-											return null;
-										}
-									}
-
-									foreach ($isGrantedAttributes as $isGrantedAttribute) {
-										if (!$this->authorizationChecker->isGranted($isGrantedAttribute->attribute)) {
-											return null;
-										}
-									}
-
-									/** @var Action $actionInstance */
-									$actionInstance = $actionRefAttribute->newInstance();
-									$action = ($actionInstance->name ?: $reflectionMethod->name);
-									$title = ($actionInstance->name ?: StringHelper::titlize(ucfirst($reflectionMethod->name)));
-									$routeName = $routeAttribute?->getName() ?: ($reflectionClass->name.'::'.$reflectionMethod->name);
-									if(null !== $route = $this->router->getRouteCollection()->get($routeName)) {
-										$routeAttribute = new Route($route->getPath(), $routeName, methods: $route->getMethods());
-									}
-
-									$actionInstance
-										->setName($action)
-										->setTitle($title)
-										->setRoute($routeAttribute)
-										->setNamespace($namespace);
-
-
-									switch ($action) {
-										case 'add':
-										case 'edit': {
-											if(null === $this->getEntityType()) {
-												return null;
-											}
-										}
-									}
-
-									return [
-										$action => $actionInstance,
-									];
-								},
-								$actionAttributes
-							)
-						)
-					);
-				},
-				[]
-			);
-		}
-
-		return $this->actions;
+		return $this->actions ?: $this->actions = iterator_to_array(
+			$this->actionCollection->load($this->getControllerClass(), $this->getEntity()->fqcn)
+		);
 	}
 
 	protected function getExpressionLanguage(): ExpressionLanguage
