@@ -79,6 +79,10 @@ class ActionCollection
 				continue;
 			}
 
+			if($entityFCQN && $entityFCQN !== $methodEntityFQCN) {
+				continue;
+			}
+
 			if(!$isAccessGranted($reflectionMethod)) {
 				continue;
 			}
