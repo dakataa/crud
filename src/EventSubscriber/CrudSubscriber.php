@@ -4,6 +4,7 @@ namespace Dakataa\Crud\EventSubscriber;
 
 use Dakataa\Crud\Attribute\Action;
 use Dakataa\Crud\Controller\AbstractCrudController;
+use Dakataa\Crud\Service\ActionCollection;
 use Doctrine\ORM\EntityManagerInterface;
 use ReflectionAttribute;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
@@ -26,6 +27,7 @@ class CrudSubscriber
 		protected EventDispatcherInterface $dispatcher,
 		protected EntityManagerInterface $entityManager,
 		protected ParameterBagInterface $parameterBag,
+		protected ActionCollection $actionCollection,
 		protected ?AuthorizationCheckerInterface $authorizationChecker = null,
 		protected ?TemplateProvider $templateProvider = null,
 	) {
@@ -39,17 +41,16 @@ class CrudSubscriber
 		if (empty($actions = $event->getAttributes(Action::class))) {
 			return;
 		}
-
+		/** @var Action $action */
+		$action = array_shift($actions);
 		[$controllerObject, $method] = $event->getController();
 
-		if (is_a($controllerObject, AbstractCrudController::class, true)) {
+		if ($action->name === $method && is_a($controllerObject, AbstractCrudController::class, true)) {
 			$this->controller = $controllerObject;
 
 			return;
 		}
 
-		/** @var Action $action */
-		$action = array_shift($actions);
 		$this->controller = new class (
 			$this,
 			$event,
@@ -58,6 +59,7 @@ class CrudSubscriber
 			$this->dispatcher,
 			$this->entityManager,
 			$this->parameterBag,
+			$this->actionCollection,
 			$this->authorizationChecker,
 			$this->templateProvider
 		) extends AbstractCrudController {
@@ -72,6 +74,7 @@ class CrudSubscriber
 				EventDispatcherInterface $dispatcher,
 				EntityManagerInterface $entityManager,
 				ParameterBagInterface $parameterBag,
+				ActionCollection $actionCollection,
 				?AuthorizationCheckerInterface $authorizationChecker = null,
 				?TemplateProvider $templateProvider = null,
 			) {
@@ -83,21 +86,19 @@ class CrudSubscriber
 					$dispatcher,
 					$entityManager,
 					$parameterBag,
+					$actionCollection,
 					authorizationChecker: $authorizationChecker,
 					templateProvider: $templateProvider
 				);
 			}
 
-			protected function getControllerClass(): string
+			public function getControllerClass(): string
 			{
 				return $this->originClassName;
 			}
 
 			protected function getPHPAttributes(string $attributeFQCN, string $method = null): array
 			{
-				if($method)
-					$this->crudSubscriber->getPHPAttributes($this->controllerEvent, $attributeFQCN);
-
 				return $this->crudSubscriber->getPHPAttributes($this->controllerEvent, $attributeFQCN);
 			}
 		};

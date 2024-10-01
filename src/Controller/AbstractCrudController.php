@@ -18,9 +18,9 @@ use Dakataa\Crud\Serializer\Normalizer\FormErrorNormalizer;
 use Dakataa\Crud\Serializer\Normalizer\FormViewNormalizer;
 use Dakataa\Crud\Serializer\Normalizer\RouteNormalizer;
 use Dakataa\Crud\Service\ActionCollection;
+use Dakataa\Crud\Twig\TemplateProvider;
 use Dakataa\Crud\Utils\Doctrine\Paginator;
 use Dakataa\Crud\Utils\StringHelper;
-use Dakataa\Crud\Twig\TemplateProvider;
 use DateTime;
 use DateTimeInterface;
 use Doctrine\Common\Collections\Collection;
@@ -33,7 +33,6 @@ use Doctrine\Persistence\Mapping\ClassMetadata;
 use Doctrine\Persistence\ObjectRepository;
 use Exception;
 use Generator;
-use InvalidArgumentException;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Csv;
 use PhpOffice\PhpSpreadsheet\Writer\Html;
@@ -54,7 +53,6 @@ use Symfony\Component\Form\Extension\Core\Type\CollectionType;
 use Symfony\Component\Form\Extension\Core\Type\DateType;
 use Symfony\Component\Form\Extension\Core\Type\FormType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
-use Symfony\Component\Form\FormError;
 use Symfony\Component\Form\FormFactoryInterface;
 use Symfony\Component\Form\FormInterface;
 use Symfony\Component\Form\FormTypeInterface;
@@ -67,7 +65,6 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Routing\RouterInterface;
 use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
-use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
 use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
 use Symfony\Component\Serializer\Normalizer\AbstractNormalizer;
@@ -104,8 +101,10 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	{
 		$reflectionClass = new ReflectionClass($this->getControllerClass());
 
-		return array_map(fn(ReflectionAttribute $attribute) => $attribute->newInstance(),
-			($method ? $reflectionClass->getMethod($method) : $reflectionClass)->getAttributes($attributeFQCN));
+		return array_map(
+			fn(ReflectionAttribute $attribute) => $attribute->newInstance(),
+			($method ? $reflectionClass->getMethod($method) : $reflectionClass)->getAttributes($attributeFQCN)
+		);
 	}
 
 	protected function getPHPAttribute(string $attributeClass, string $method = null): mixed
@@ -483,7 +482,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		$responseStatus = 200;
 		if ($request->isMethod(Request::METHOD_POST)) {
 			$form->handleRequest($request);
-
 			if ($form->isSubmitted() && $form->isValid()) {
 				$this->beforeFormSave($request, $form);
 
@@ -512,19 +510,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 						$this->router->generate($this->getRoute('edit')->getName(), $redirect['parameters'])
 					);
 				}
-			} else {
-				$responseStatus = 400;
-
-				$messages = [
-					'error' => array_map(fn(FormError $error) => $error->getMessage(),
-						iterator_to_array($form->getErrors())),
-				];
-			}
-		}
-
-		if ($request->hasSession()) {
-			foreach ($messages as $messageType => $messageList) {
-				$request->getSession()->getFlashBag()->add($messageType, implode(' ', $messageList));
 			}
 		}
 
@@ -602,7 +587,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 	}
 
-	protected function getControllerClass(): string
+	public function getControllerClass(): string
 	{
 		return static::class;
 	}
