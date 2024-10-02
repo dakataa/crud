@@ -69,4 +69,6 @@ with ReactJS Package [dakataa/crud-react](https://github.com/dakataa/crud-react)
  
 ## How to extend templates
 
+## Map URL parameter to entity column
+
 ## How to ...

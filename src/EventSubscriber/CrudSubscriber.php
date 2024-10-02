@@ -41,6 +41,7 @@ class CrudSubscriber
 		if (empty($actions = $event->getAttributes(Action::class))) {
 			return;
 		}
+
 		/** @var Action $action */
 		$action = array_shift($actions);
 		[$controllerObject, $method] = $event->getController();
@@ -126,7 +127,7 @@ class CrudSubscriber
 			return;
 		}
 
-		$event->setController([$this->controller, $action->name], [Action::class => [$action]]);
+		$event->setController([$this->controller, $action->name], $event->getAttributes());
 	}
 
 	public function getPHPAttributes(ControllerEvent $controllerEvent, string $attributeClass): array
@@ -139,7 +140,7 @@ class CrudSubscriber
 		// Get Method Attributes
 		return array_map(
 			fn(ReflectionAttribute $reflectionAttribute) => $reflectionAttribute->newInstance(),
-			$controllerEvent->getControllerReflector()->getAttributes($attributeClass)
+			$controllerEvent->getAttributes($attributeClass)
 		);
 	}
 

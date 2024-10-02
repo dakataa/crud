@@ -11,6 +11,7 @@ use Dakataa\Crud\Attribute\EntityJoinColumn;
 use Dakataa\Crud\Attribute\EntitySort;
 use Dakataa\Crud\Attribute\EntityType;
 use Dakataa\Crud\Attribute\Enum\EntityColumnViewGroupEnum;
+use Dakataa\Crud\Attribute\PathParameterToFieldMap;
 use Dakataa\Crud\Attribute\SearchableOptions;
 use Dakataa\Crud\Serializer\Normalizer\ActionNormalizer;
 use Dakataa\Crud\Serializer\Normalizer\ColumnNormalizer;
@@ -26,7 +27,6 @@ use DateTimeInterface;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
-use Doctrine\ORM\Mapping\MappingException;
 use Doctrine\ORM\Query\Expr\Join;
 use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\Mapping\ClassMetadata;
@@ -61,6 +61,9 @@ use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Symfony\Component\HttpKernel\Controller\ArgumentResolverInterface;
+use Symfony\Component\HttpKernel\Controller\ControllerResolver;
+use Symfony\Component\HttpKernel\Controller\ControllerResolverInterface;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Routing\RouterInterface;
@@ -100,7 +103,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	protected function getPHPAttributes(string $attributeFQCN, string $method = null): array
 	{
 		$reflectionClass = new ReflectionClass($this->getControllerClass());
-
 		return array_map(
 			fn(ReflectionAttribute $attribute) => $attribute->newInstance(),
 			($method ? $reflectionClass->getMethod($method) : $reflectionClass)->getAttributes($attributeFQCN)
@@ -121,7 +123,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		protected ActionCollection $actionCollection,
 		protected ?SerializerInterface $serializer = null,
 		protected ?AuthorizationCheckerInterface $authorizationChecker = null,
-		protected ?TemplateProvider $templateProvider = null,
+		protected ?TemplateProvider $templateProvider = null
 	) {
 		$this->entity = $this->getPHPAttribute(Entity::class);
 		$this->entityType = $this->getPHPAttribute(EntityType::class);
@@ -499,9 +501,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				$redirect = [
 					'route' => $this->router->getRouteCollection()->get($this->getRoute('edit')->getName()),
 					'parameters' => [
-						'id' => $this->getEntityClassMetadata()->getIdentifierValues(
-								$object
-							)[$entityClassIdentifierFieldName] ?? null,
+						'id' => $this->getEntityClassMetadata()->getIdentifierValues($object)[$entityClassIdentifierFieldName] ?? null,
 					],
 				];
 
@@ -936,7 +936,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	protected function buildQuery(
 		Request $request,
 		QueryBuilder $query,
-		EntityColumnViewGroupEnum|string $viewGroup = EntityColumnViewGroupEnum::List
+		EntityColumnViewGroupEnum|string $viewGroup = EntityColumnViewGroupEnum::List,
 	): self {
 		$entity = $this->getEntity();
 		foreach (($entity->joins ?? []) as $join) {
@@ -965,30 +965,42 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		$sortingFields = array_filter($this->prepareSorting($request, $viewGroup));
 		$columnFieldsMapping = $this->getEntityColumnToFieldMapping();
 
-		$pathParameters = array_intersect_key($request->attributes->all(), array_flip(array_filter($request->attributes->keys(), fn(string $key) => !str_starts_with($key, '_'))));
-		foreach ($pathParameters as $pathParameter => $pathParameterValue) {
-			if(!isset($columnFieldsMapping[$pathParameter]))
-				continue;
+		/** @var PathParameterToFieldMap[] $mappedPathParameters */
+		$mappedPathParameters = $this->getPHPAttributes(PathParameterToFieldMap::class);
+		$urlPathParameters = array_intersect_key($request->attributes->all(), array_flip(array_filter($request->attributes->keys(), fn(string $key) => !str_starts_with($key, '_'))));
+		foreach ($mappedPathParameters as $mappedPathAttribute) {
+			if(!isset($urlPathParameters[$mappedPathAttribute->getPathParameter()])) {
+				throw new Exception(sprintf('Missing mapped path attribute: %s', $mappedPathAttribute->getPathParameter()));
+			}
 
-			$parameter = sprintf('pp%s', $pathParameter);
+			if(!isset($columnFieldsMapping[$mappedPathAttribute->getField()])) {
+				throw new Exception(sprintf('Missing column for field: %s', $mappedPathAttribute->getField()));
+			}
+
+			$pathParameter = $mappedPathAttribute->getPathParameter();
+			$pathParameterValue = $urlPathParameters[$pathParameter];
+			$queryParameterAlias = sprintf('pp%s', $mappedPathAttribute->getField());
+			$entityColumn = $columnFieldsMapping[$mappedPathAttribute->getField()];
 
 			$query->andWhere(
 				sprintf(
 					'%s.%s = :%s',
 					self::ENTITY_ROOT_ALIAS,
-					$columnFieldsMapping[$pathParameter],
-					$parameter
+					$entityColumn,
+					$queryParameterAlias
 				)
-			)->setParameter($parameter, $pathParameterValue);
+			)->setParameter($queryParameterAlias, $pathParameterValue);
 		}
 
 		foreach (
-			$this->buildColumns($viewGroup, true) as ['entityAlias' => $entityAlias,
-			'entityField' => $entityField,
-			'relations' => $relations,
-			'type' => $type,
-			'column' => $column,
-			'canSelect' => $canSelect]
+			$this->buildColumns($viewGroup, true) as [
+				'entityAlias' => $entityAlias,
+				'entityField' => $entityField,
+				'relations' => $relations,
+				'type' => $type,
+				'column' => $column,
+				'canSelect' => $canSelect
+			]
 		) {
 			$isFilterApplied = $filters && !empty($filters[$column->getAlias()]) && false !== $column->getSearchable();
 
@@ -1136,20 +1148,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 
 		return $this->entityClassMetadata;
-	}
-
-	/**
-	 * @param string $field
-	 * @return array|null
-	 * @throws MappingException
-	 */
-	public function getEntityFieldMetadata(string $field): ?array
-	{
-		if (!$this->getEntityClassMetadata()->hasField(lcfirst($field))) {
-			return null;
-		}
-
-		return $this->getEntityClassMetadata()->getFieldMapping(lcfirst($field));
 	}
 
 	public function getEntityColumnToFieldMapping(): array {
