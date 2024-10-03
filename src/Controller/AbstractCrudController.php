@@ -463,6 +463,28 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			}
 		} else {
 			$object = new ($this->getEntityClassMetadata()->getName());
+
+			/** @var PathParameterToFieldMap[] $mappedPathParameters */
+			$mappedPathParameters = $this->getPHPAttributes(PathParameterToFieldMap::class);
+			$fieldColumnMap = $this->getEntityColumnToFieldMapping();
+			foreach ($mappedPathParameters as $mappedPathParameter) {
+				$fieldName = $mappedPathParameter->getField();
+				if(!isset($fieldColumnMap[$fieldName])) {
+					throw new Exception(sprintf('Invalid field mapping for %s', $fieldName));
+				}
+
+				$columnName = $fieldColumnMap[$fieldName];
+				$fieldValue = $request->attributes->get($mappedPathParameter->getPathParameter());
+
+				if($this->getEntityClassMetadata()->hasAssociation($columnName)) {
+					$associationClassName = $this->getEntityClassMetadata()->getAssociationTargetClass($columnName);
+					if(null === $fieldValue = $this->entityManager->getRepository($associationClassName)->find($fieldValue)) {
+						throw new Exception(sprintf('Cannot found "%s" association with PK %s', $columnName, $fieldValue));
+					}
+				}
+
+				$this->getEntityClassMetadata()->setFieldValue($object, $columnName, $fieldValue);
+			}
 		}
 
 		//Setup Form type options
@@ -498,10 +520,14 @@ abstract class AbstractCrudController implements CrudControllerInterface
 					],
 				];
 
+				$route = $this->router->getRouteCollection()->get($this->getRoute('edit')->getName());
+				$routeVariables = $route->compile()->getPathVariables();
+
 				$redirect = [
 					'route' => $this->router->getRouteCollection()->get($this->getRoute('edit')->getName()),
 					'parameters' => [
 						'id' => $this->getEntityClassMetadata()->getIdentifierValues($object)[$entityClassIdentifierFieldName] ?? null,
+						...(array_intersect_key($request->attributes->all(), array_flip($routeVariables))),
 					],
 				];
 
@@ -538,12 +564,18 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			return new Response;
 		}
 
+
 		$object = $this->getEntityRepository()->find($id);
 		if ($object) {
 			$this->batchDelete($request, [$object]);
 		}
 
-		return new RedirectResponse($this->router->generate($this->getRoute('list')->getName(), $request->request->all()));
+		$route = $this->router->getRouteCollection()->get($this->getRoute('list')->getName());
+		$routeVariables = $route->compile()->getPathVariables();
+
+		return new RedirectResponse($this->router->generate($this->getRoute('list')->getName(), [
+			...array_intersect_key($request->attributes->all(), array_flip($routeVariables))
+		]));
 	}
 
 	protected function handleBatch(Request $request): Response|FormInterface
@@ -1219,11 +1251,15 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 	protected function getRoute(string $method = null): Route
 	{
+		if(null !== $action = array_values(array_filter($this->getActions(), fn(Action $action) => $action->getName() === $method))[0] ?? null) {
+			return $action->getRoute();
+		}
+
 		if (!method_exists($this, $method)) {
 			throw new NotFoundHttpException(sprintf('Missing Route "%s"', $method));
 		}
 
-		$routeName = static::class.'::'.$method;
+		$routeName = $this->getControllerClass().'::'.$method;
 		if(null === $route = $this->router->getRouteCollection()->get($routeName))
 			throw new NotFoundHttpException(sprintf('Route "%s" does not exist', $routeName));
 
