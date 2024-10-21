@@ -61,9 +61,6 @@ use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
-use Symfony\Component\HttpKernel\Controller\ArgumentResolverInterface;
-use Symfony\Component\HttpKernel\Controller\ControllerResolver;
-use Symfony\Component\HttpKernel\Controller\ControllerResolverInterface;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Routing\RouterInterface;
@@ -89,7 +86,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	const EXPORT_CSV = 'csv';
 	const EXPORT_HTML = 'html';
 
-	const DEFAULT_RESULTS_LIMIT = 5;
+	const RESULTS_LIMIT_DEFAULT = 5;
+	const RESULTS_LIMIT_MAX = 100;
 
 	protected ?Entity $entity = null;
 	protected ?EntityType $entityType = null;
@@ -281,8 +279,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			->buildQuery($request, $query)
 			->buildCustomQuery($request, $query);
 
+		$maxResults = $this->prepareMaxResults($request);
 		$paginator = (new Paginator($query, $request->query->getInt('page', 1)))
-			->setMaxResults($this->prepareResultsLimit($request));
+			->setMaxResults($maxResults);
 
 		return $this->response($request, [
 			'title' => $action?->title ?: StringHelper::titlize($this->getEntityShortName()),
@@ -302,6 +301,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			],
 			'sort' => $sorting,
 			'action' => iterator_to_array($this->actionCollection->load($this->getControllerClass(), $this->getEntity()->fqcn)),
+			'meta' => [
+				'maxResults' => $maxResults
+			],
 		], defaultTemplate: 'list');
 	}
 
@@ -531,10 +533,10 @@ abstract class AbstractCrudController implements CrudControllerInterface
 					],
 				];
 
+				$redirect['url'] = $this->router->generate($this->getRoute('edit')->getName(), $redirect['parameters']);
+
 				if ($request->getPreferredFormat() === 'html') {
-					return new RedirectResponse(
-						$this->router->generate($this->getRoute('edit')->getName(), $redirect['parameters'])
-					);
+					return new RedirectResponse($redirect['url']);
 				}
 			}
 		}
@@ -563,7 +565,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		if($request->isMethod(Request::METHOD_OPTIONS)) {
 			return new Response;
 		}
-
 
 		$object = $this->getEntityRepository()->find($id);
 		if ($object) {
@@ -864,27 +865,29 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		);
 
 		$sorting = array_intersect_key($sorting, $columns) + array_fill_keys(array_keys($columns), null);
-		$request->getSession()->set($this->getAlias().'.sort', $sorting);
+
+		if ($request->hasSession()) {
+			$request->getSession()->set($this->getAlias().'.sort', $sorting);
+		}
 
 		return $sorting;
 	}
 
-	public function prepareResultsLimit(Request $request): int
+	public function prepareMaxResults(Request $request): int
 	{
-		if ($request->query->has('limit')) {
-			$limit = round(
-					($request->query->getInt('limit', self::DEFAULT_RESULTS_LIMIT)) / self::DEFAULT_RESULTS_LIMIT
-				) * self::DEFAULT_RESULTS_LIMIT;
+		$limit = ($request->hasSession() ? intval($request->getSession()->get($this->getAlias().'.limit')) : null) ?: self::RESULTS_LIMIT_DEFAULT;
+		$limit = min(
+			self::RESULTS_LIMIT_MAX,
+			max(
+				self::RESULTS_LIMIT_DEFAULT,
+				round(
+					$request->query->getInt('limit', $limit) / self::RESULTS_LIMIT_DEFAULT
+				) * self::RESULTS_LIMIT_DEFAULT
+			)
+		);
 
-			$request->getSession()->set($this->getAlias().'.limit', min(100, max(self::DEFAULT_RESULTS_LIMIT, $limit)));
-		} else {
-			$limit = min(
-				100,
-				max(
-					self::DEFAULT_RESULTS_LIMIT,
-					intval($request->getSession()->get($this->getAlias().'.limit', self::DEFAULT_RESULTS_LIMIT))
-				)
-			);
+		if($request->hasSession()) {
+			$request->getSession()->set($this->getAlias().'.limit', $limit);
 		}
 
 		return $limit;
