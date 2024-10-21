@@ -301,9 +301,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			],
 			'sort' => $sorting,
 			'action' => iterator_to_array($this->actionCollection->load($this->getControllerClass(), $this->getEntity()->fqcn)),
-			'meta' => [
-				'maxResults' => $maxResults
-			],
 		], defaultTemplate: 'list');
 	}
 
