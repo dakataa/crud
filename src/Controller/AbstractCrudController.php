@@ -11,6 +11,7 @@ use Dakataa\Crud\Attribute\EntityJoinColumn;
 use Dakataa\Crud\Attribute\EntitySort;
 use Dakataa\Crud\Attribute\EntityType;
 use Dakataa\Crud\Attribute\Enum\EntityColumnViewGroupEnum;
+use Dakataa\Crud\Attribute\PathParameterToFieldMap;
 use Dakataa\Crud\Attribute\SearchableOptions;
 use Dakataa\Crud\Serializer\Normalizer\ActionNormalizer;
 use Dakataa\Crud\Serializer\Normalizer\ColumnNormalizer;
@@ -18,22 +19,20 @@ use Dakataa\Crud\Serializer\Normalizer\FormErrorNormalizer;
 use Dakataa\Crud\Serializer\Normalizer\FormViewNormalizer;
 use Dakataa\Crud\Serializer\Normalizer\RouteNormalizer;
 use Dakataa\Crud\Service\ActionCollection;
+use Dakataa\Crud\Twig\TemplateProvider;
 use Dakataa\Crud\Utils\Doctrine\Paginator;
 use Dakataa\Crud\Utils\StringHelper;
-use Dakataa\Crud\Twig\TemplateProvider;
 use DateTime;
 use DateTimeInterface;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
-use Doctrine\ORM\Mapping\MappingException;
 use Doctrine\ORM\Query\Expr\Join;
 use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\Mapping\ClassMetadata;
 use Doctrine\Persistence\ObjectRepository;
 use Exception;
 use Generator;
-use InvalidArgumentException;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Csv;
 use PhpOffice\PhpSpreadsheet\Writer\Html;
@@ -54,7 +53,6 @@ use Symfony\Component\Form\Extension\Core\Type\CollectionType;
 use Symfony\Component\Form\Extension\Core\Type\DateType;
 use Symfony\Component\Form\Extension\Core\Type\FormType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
-use Symfony\Component\Form\FormError;
 use Symfony\Component\Form\FormFactoryInterface;
 use Symfony\Component\Form\FormInterface;
 use Symfony\Component\Form\FormTypeInterface;
@@ -67,7 +65,6 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Routing\RouterInterface;
 use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
-use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
 use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
 use Symfony\Component\Serializer\Normalizer\AbstractNormalizer;
@@ -89,7 +86,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	const EXPORT_CSV = 'csv';
 	const EXPORT_HTML = 'html';
 
-	const DEFAULT_RESULTS_LIMIT = 5;
+	const RESULTS_LIMIT_DEFAULT = 5;
+	const RESULTS_LIMIT_MAX = 100;
 
 	protected ?Entity $entity = null;
 	protected ?EntityType $entityType = null;
@@ -103,9 +101,10 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	protected function getPHPAttributes(string $attributeFQCN, string $method = null): array
 	{
 		$reflectionClass = new ReflectionClass($this->getControllerClass());
-
-		return array_map(fn(ReflectionAttribute $attribute) => $attribute->newInstance(),
-			($method ? $reflectionClass->getMethod($method) : $reflectionClass)->getAttributes($attributeFQCN));
+		return array_map(
+			fn(ReflectionAttribute $attribute) => $attribute->newInstance(),
+			($method ? $reflectionClass->getMethod($method) : $reflectionClass)->getAttributes($attributeFQCN)
+		);
 	}
 
 	protected function getPHPAttribute(string $attributeClass, string $method = null): mixed
@@ -122,7 +121,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		protected ActionCollection $actionCollection,
 		protected ?SerializerInterface $serializer = null,
 		protected ?AuthorizationCheckerInterface $authorizationChecker = null,
-		protected ?TemplateProvider $templateProvider = null,
+		protected ?TemplateProvider $templateProvider = null
 	) {
 		$this->entity = $this->getPHPAttribute(Entity::class);
 		$this->entityType = $this->getPHPAttribute(EntityType::class);
@@ -280,8 +279,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			->buildQuery($request, $query)
 			->buildCustomQuery($request, $query);
 
+		$maxResults = $this->prepareMaxResults($request);
 		$paginator = (new Paginator($query, $request->query->getInt('page', 1)))
-			->setMaxResults($this->prepareResultsLimit($request));
+			->setMaxResults($maxResults);
 
 		return $this->response($request, [
 			'title' => $action?->title ?: StringHelper::titlize($this->getEntityShortName()),
@@ -462,6 +462,28 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			}
 		} else {
 			$object = new ($this->getEntityClassMetadata()->getName());
+
+			/** @var PathParameterToFieldMap[] $mappedPathParameters */
+			$mappedPathParameters = $this->getPHPAttributes(PathParameterToFieldMap::class);
+			$fieldColumnMap = $this->getEntityColumnToFieldMapping();
+			foreach ($mappedPathParameters as $mappedPathParameter) {
+				$fieldName = $mappedPathParameter->getField();
+				if(!isset($fieldColumnMap[$fieldName])) {
+					throw new Exception(sprintf('Invalid field mapping for %s', $fieldName));
+				}
+
+				$columnName = $fieldColumnMap[$fieldName];
+				$fieldValue = $request->attributes->get($mappedPathParameter->getPathParameter());
+
+				if($this->getEntityClassMetadata()->hasAssociation($columnName)) {
+					$associationClassName = $this->getEntityClassMetadata()->getAssociationTargetClass($columnName);
+					if(null === $fieldValue = $this->entityManager->getRepository($associationClassName)->find($fieldValue)) {
+						throw new Exception(sprintf('Cannot found "%s" association with PK %s', $columnName, $fieldValue));
+					}
+				}
+
+				$this->getEntityClassMetadata()->setFieldValue($object, $columnName, $fieldValue);
+			}
 		}
 
 		//Setup Form type options
@@ -483,7 +505,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		$responseStatus = 200;
 		if ($request->isMethod(Request::METHOD_POST)) {
 			$form->handleRequest($request);
-
 			if ($form->isSubmitted() && $form->isValid()) {
 				$this->beforeFormSave($request, $form);
 
@@ -498,33 +519,22 @@ abstract class AbstractCrudController implements CrudControllerInterface
 					],
 				];
 
+				$route = $this->router->getRouteCollection()->get($this->getRoute('edit')->getName());
+				$routeVariables = $route->compile()->getPathVariables();
+
 				$redirect = [
 					'route' => $this->router->getRouteCollection()->get($this->getRoute('edit')->getName()),
 					'parameters' => [
-						'id' => $this->getEntityClassMetadata()->getIdentifierValues(
-								$object
-							)[$entityClassIdentifierFieldName] ?? null,
+						'id' => $this->getEntityClassMetadata()->getIdentifierValues($object)[$entityClassIdentifierFieldName] ?? null,
+						...(array_intersect_key($request->attributes->all(), array_flip($routeVariables))),
 					],
 				];
 
+				$redirect['url'] = $this->router->generate($this->getRoute('edit')->getName(), $redirect['parameters']);
+
 				if ($request->getPreferredFormat() === 'html') {
-					return new RedirectResponse(
-						$this->router->generate($this->getRoute('edit')->getName(), $redirect['parameters'])
-					);
+					return new RedirectResponse($redirect['url']);
 				}
-			} else {
-				$responseStatus = 400;
-
-				$messages = [
-					'error' => array_map(fn(FormError $error) => $error->getMessage(),
-						iterator_to_array($form->getErrors())),
-				];
-			}
-		}
-
-		if ($request->hasSession()) {
-			foreach ($messages as $messageType => $messageList) {
-				$request->getSession()->getFlashBag()->add($messageType, implode(' ', $messageList));
 			}
 		}
 
@@ -558,7 +568,12 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			$this->batchDelete($request, [$object]);
 		}
 
-		return new RedirectResponse($this->router->generate($this->getRoute('list')->getName(), $request->request->all()));
+		$route = $this->router->getRouteCollection()->get($this->getRoute('list')->getName());
+		$routeVariables = $route->compile()->getPathVariables();
+
+		return new RedirectResponse($this->router->generate($this->getRoute('list')->getName(), [
+			...array_intersect_key($request->attributes->all(), array_flip($routeVariables))
+		]));
 	}
 
 	protected function handleBatch(Request $request): Response|FormInterface
@@ -602,7 +617,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 	}
 
-	protected function getControllerClass(): string
+	public function getControllerClass(): string
 	{
 		return static::class;
 	}
@@ -847,27 +862,29 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		);
 
 		$sorting = array_intersect_key($sorting, $columns) + array_fill_keys(array_keys($columns), null);
-		$request->getSession()->set($this->getAlias().'.sort', $sorting);
+
+		if ($request->hasSession()) {
+			$request->getSession()->set($this->getAlias().'.sort', $sorting);
+		}
 
 		return $sorting;
 	}
 
-	public function prepareResultsLimit(Request $request): int
+	public function prepareMaxResults(Request $request): int
 	{
-		if ($request->query->has('limit')) {
-			$limit = round(
-					($request->query->getInt('limit', self::DEFAULT_RESULTS_LIMIT)) / self::DEFAULT_RESULTS_LIMIT
-				) * self::DEFAULT_RESULTS_LIMIT;
+		$limit = ($request->hasSession() ? intval($request->getSession()->get($this->getAlias().'.limit')) : null) ?: self::RESULTS_LIMIT_DEFAULT;
+		$limit = min(
+			self::RESULTS_LIMIT_MAX,
+			max(
+				self::RESULTS_LIMIT_DEFAULT,
+				round(
+					$request->query->getInt('limit', $limit) / self::RESULTS_LIMIT_DEFAULT
+				) * self::RESULTS_LIMIT_DEFAULT
+			)
+		);
 
-			$request->getSession()->set($this->getAlias().'.limit', min(100, max(self::DEFAULT_RESULTS_LIMIT, $limit)));
-		} else {
-			$limit = min(
-				100,
-				max(
-					self::DEFAULT_RESULTS_LIMIT,
-					intval($request->getSession()->get($this->getAlias().'.limit', self::DEFAULT_RESULTS_LIMIT))
-				)
-			);
+		if($request->hasSession()) {
+			$request->getSession()->set($this->getAlias().'.limit', $limit);
 		}
 
 		return $limit;
@@ -951,7 +968,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	protected function buildQuery(
 		Request $request,
 		QueryBuilder $query,
-		EntityColumnViewGroupEnum|string $viewGroup = EntityColumnViewGroupEnum::List
+		EntityColumnViewGroupEnum|string $viewGroup = EntityColumnViewGroupEnum::List,
 	): self {
 		$entity = $this->getEntity();
 		foreach (($entity->joins ?? []) as $join) {
@@ -980,30 +997,42 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		$sortingFields = array_filter($this->prepareSorting($request, $viewGroup));
 		$columnFieldsMapping = $this->getEntityColumnToFieldMapping();
 
-		$pathParameters = array_intersect_key($request->attributes->all(), array_flip(array_filter($request->attributes->keys(), fn(string $key) => !str_starts_with($key, '_'))));
-		foreach ($pathParameters as $pathParameter => $pathParameterValue) {
-			if(!isset($columnFieldsMapping[$pathParameter]))
-				continue;
+		/** @var PathParameterToFieldMap[] $mappedPathParameters */
+		$mappedPathParameters = $this->getPHPAttributes(PathParameterToFieldMap::class);
+		$urlPathParameters = array_intersect_key($request->attributes->all(), array_flip(array_filter($request->attributes->keys(), fn(string $key) => !str_starts_with($key, '_'))));
+		foreach ($mappedPathParameters as $mappedPathAttribute) {
+			if(!isset($urlPathParameters[$mappedPathAttribute->getPathParameter()])) {
+				throw new Exception(sprintf('Missing mapped path attribute: %s', $mappedPathAttribute->getPathParameter()));
+			}
 
-			$parameter = sprintf('pp%s', $pathParameter);
+			if(!isset($columnFieldsMapping[$mappedPathAttribute->getField()])) {
+				throw new Exception(sprintf('Missing column for field: %s', $mappedPathAttribute->getField()));
+			}
+
+			$pathParameter = $mappedPathAttribute->getPathParameter();
+			$pathParameterValue = $urlPathParameters[$pathParameter];
+			$queryParameterAlias = sprintf('pp%s', $mappedPathAttribute->getField());
+			$entityColumn = $columnFieldsMapping[$mappedPathAttribute->getField()];
 
 			$query->andWhere(
 				sprintf(
 					'%s.%s = :%s',
 					self::ENTITY_ROOT_ALIAS,
-					$columnFieldsMapping[$pathParameter],
-					$parameter
+					$entityColumn,
+					$queryParameterAlias
 				)
-			)->setParameter($parameter, $pathParameterValue);
+			)->setParameter($queryParameterAlias, $pathParameterValue);
 		}
 
 		foreach (
-			$this->buildColumns($viewGroup, true) as ['entityAlias' => $entityAlias,
-			'entityField' => $entityField,
-			'relations' => $relations,
-			'type' => $type,
-			'column' => $column,
-			'canSelect' => $canSelect]
+			$this->buildColumns($viewGroup, true) as [
+				'entityAlias' => $entityAlias,
+				'entityField' => $entityField,
+				'relations' => $relations,
+				'type' => $type,
+				'column' => $column,
+				'canSelect' => $canSelect
+			]
 		) {
 			$isFilterApplied = $filters && !empty($filters[$column->getAlias()]) && false !== $column->getSearchable();
 
@@ -1153,20 +1182,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return $this->entityClassMetadata;
 	}
 
-	/**
-	 * @param string $field
-	 * @return array|null
-	 * @throws MappingException
-	 */
-	public function getEntityFieldMetadata(string $field): ?array
-	{
-		if (!$this->getEntityClassMetadata()->hasField(lcfirst($field))) {
-			return null;
-		}
-
-		return $this->getEntityClassMetadata()->getFieldMapping(lcfirst($field));
-	}
-
 	public function getEntityColumnToFieldMapping(): array {
 		return array_merge(
 			array_combine(
@@ -1236,11 +1251,15 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 	protected function getRoute(string $method = null): Route
 	{
+		if(null !== $action = array_values(array_filter($this->getActions(), fn(Action $action) => $action->getName() === $method))[0] ?? null) {
+			return $action->getRoute();
+		}
+
 		if (!method_exists($this, $method)) {
 			throw new NotFoundHttpException(sprintf('Missing Route "%s"', $method));
 		}
 
-		$routeName = static::class.'::'.$method;
+		$routeName = $this->getControllerClass().'::'.$method;
 		if(null === $route = $this->router->getRouteCollection()->get($routeName))
 			throw new NotFoundHttpException(sprintf('Route "%s" does not exist', $routeName));
 
