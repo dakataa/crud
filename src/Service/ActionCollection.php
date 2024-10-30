@@ -19,7 +19,6 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
 
 class ActionCollection
 {
-
 	public function __construct(
 		#[AutowireLocator('dakataa.crud.entity')]
 		private readonly ServiceLocator $handlers,
@@ -37,7 +36,7 @@ class ActionCollection
 		}
 	}
 
-	public function load(string $controllerFQCN, ?string $entityFCQN = null): Generator
+	public function load(string $controllerFQCN, ?string $entityFCQN = null, ?string $method = null): Generator
 	{
 		if (!class_exists($controllerFQCN)) {
 			throw new InvalidArgumentException(sprintf('Class "%s" does not exist.', $controllerFQCN));
@@ -80,6 +79,10 @@ class ActionCollection
 			}
 
 			if($entityFCQN && $entityFCQN !== $methodEntityFQCN) {
+				continue;
+			}
+
+			if($method && $method !== $reflectionMethod->name) {
 				continue;
 			}
 

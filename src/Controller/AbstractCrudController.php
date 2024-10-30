@@ -279,9 +279,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			->buildQuery($request, $query)
 			->buildCustomQuery($request, $query);
 
-		$maxResults = $this->prepareMaxResults($request);
 		$paginator = (new Paginator($query, $request->query->getInt('page', 1)))
-			->setMaxResults($maxResults);
+			->setMaxResults($this->prepareMaxResults($request));
 
 		return $this->response($request, [
 			'title' => $action?->title ?: StringHelper::titlize($this->getEntityShortName()),
