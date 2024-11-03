@@ -14,7 +14,8 @@ class Action
 		public ?Route $route = null,
 		public ?bool $object = false,
 		public ?string $namespace = null,
-		public ?string $entity = null
+		public ?string $entity = null,
+		public ?array $options = null
 	) {
 	}
 

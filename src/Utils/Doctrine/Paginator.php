@@ -4,31 +4,36 @@ namespace Dakataa\Crud\Utils\Doctrine;
 
 use Doctrine\ORM\QueryBuilder;
 use Doctrine\ORM\Tools\Pagination\Paginator as ORMPaginator;
-use Traversable;
+
 
 class Paginator
 {
-	protected ORMPaginator $ormPaginator;
-	protected int $maxResults = 20;
+	protected ?ORMPaginator $ormPaginator = null;
 
-	public function __construct(protected QueryBuilder $query, protected int $page = 1) {
-		$this->ormPaginator = new ORMPaginator($query);
-
+	public function __construct(
+		protected QueryBuilder $query,
+		protected int $page = 1,
+		protected ?int $maxResults = null
+	) {
 	}
 
-	public function setMaxResults(int $maxResults): static
+	protected function getORMPaginator(): ORMPaginator
+	{
+		$this->query
+			->setMaxResults($this->maxResults)
+			->setFirstResult($this->getOffset());
+
+		return $this->ormPaginator ?: $this->ormPaginator = new ORMPaginator($this->query);
+	}
+
+	public function setMaxResults(?int $maxResults): static
 	{
 		$this->maxResults = $maxResults;
-		$this->ormPaginator
-			->getQuery()
-			->setMaxResults($maxResults);
-		
-		$this->setPage($this->page);
 
 		return $this;
 	}
 
-	public function getMaxResults(): int
+	public function getMaxResults(): ?int
 	{
 		return $this->maxResults;
 	}
@@ -36,10 +41,6 @@ class Paginator
 	public function setPage(int $page = 1): self
 	{
 		$this->page = $page;
-		$this->ormPaginator
-			->getQuery()
-			->setFirstResult($this->getOffset())// Offset
-			->setMaxResults($this->getMaxResults()); // Limit
 
 		return $this;
 	}
@@ -48,9 +49,10 @@ class Paginator
 	{
 		return $this->page;
 	}
-	public function getTotalPages(): int
+
+	public function getTotalPages(): ?int
 	{
-		return ceil($this->ormPaginator->count() / $this->getMaxResults());
+		return $this->getMaxResults() ? ceil($this->ormPaginator->count() / $this->getMaxResults()) : null;
 	}
 
 	public function getOffset(int $page = null): int
@@ -60,7 +62,7 @@ class Paginator
 
 	public function count(): int
 	{
-		return $this->ormPaginator->count();
+		return $this->getORMPaginator()->count();
 	}
 
 	public function getLinks(int $maxShownPages = 5): array
@@ -73,9 +75,9 @@ class Paginator
 	}
 
 
-	public function getResults(): Traversable|array
+	public function getResults(): iterable
 	{
-		return $this->ormPaginator->getIterator();
+		return $this->getORMPaginator()->getIterator();
 	}
 
 	public function paginate(): array
@@ -87,8 +89,8 @@ class Paginator
 				'totalPages' => $this->getTotalPages(),
 				'totalResults' => $this->count(),
 				'links' => $this->getLinks(),
-				'maxResults' => $this->getMaxResults()
-			]
+				'maxResults' => $this->getMaxResults(),
+			],
 		];
 	}
 }

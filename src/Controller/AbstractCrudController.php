@@ -62,6 +62,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Symfony\Component\OptionsResolver\OptionsResolver;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Routing\RouterInterface;
 use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
@@ -101,6 +102,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	protected function getPHPAttributes(string $attributeFQCN, string $method = null): array
 	{
 		$reflectionClass = new ReflectionClass($this->getControllerClass());
+
 		return array_map(
 			fn(ReflectionAttribute $attribute) => $attribute->newInstance(),
 			($method ? $reflectionClass->getMethod($method) : $reflectionClass)->getAttributes($attributeFQCN)
@@ -259,11 +261,19 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	 */
 	#[
 		Route,
-		Action
+		Action(options: ['pagination' => true]),
 	]
 	public function list(Request $request): Response
 	{
 		$action = $this->getPHPAttribute(Action::class, 'list');
+
+		['pagination' => $pagination] = (new OptionsResolver)
+			->setDefined(['pagination'])
+			->setAllowedTypes('pagination', 'boolean')
+			->setDefaults([
+				'pagination' => false,
+			])->resolve($action->options ?? []);
+
 		$batchForm = $this->handleBatch($request);
 		if ($batchForm instanceof Response) {
 			return $batchForm;
@@ -279,8 +289,11 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			->buildQuery($request, $query)
 			->buildCustomQuery($request, $query);
 
-		$paginator = (new Paginator($query, $request->query->getInt('page', 1)))
-			->setMaxResults($this->prepareMaxResults($request));
+		$paginator = new Paginator(
+			$query,
+			$request->query->getInt('page', 1),
+			$pagination ? $this->prepareMaxResults($request) : null
+		);
 
 		return $this->response($request, [
 			'title' => $action?->title ?: StringHelper::titlize($this->getEntityShortName()),
@@ -299,7 +312,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				],
 			],
 			'sort' => $sorting,
-			'action' => iterator_to_array($this->actionCollection->load($this->getControllerClass(), $this->getEntity()->fqcn)),
+			'action' => iterator_to_array(
+				$this->actionCollection->load($this->getControllerClass(), $this->getEntity()->fqcn)
+			),
 		], defaultTemplate: 'list');
 	}
 
@@ -400,9 +415,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	/**
 	 * @throws Exception
 	 */
-	#[Route(path: '/{id}/view', requirements: ['id' => '\d+'])]
+	#[Route(path: '/{id}/view')]
 	#[Action(object: true)]
-	public function view(Request $request, int $id): ?Response
+	public function view(Request $request, int|string $id): ?Response
 	{
 		$action = $this->getPHPAttribute(Action::class, 'view');
 		$queryBuilder = $this
@@ -423,9 +438,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 
 		return $this->response($request, [
-			'title' => $action?->title ? $this->getExpressionLanguage()->evaluate($action->title, [
-				'object' => $object,
-			]) : null,
+			'title' => $action?->title,
 			'object' => $object,
 			'data' => $this->compileEntityData($object),
 			'columns' => $this->getEntityColumns(EntityColumnViewGroupEnum::View),
@@ -435,9 +448,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	/**
 	 * @throws Exception
 	 */
-	#[Route(path: '/{id}/edit', requirements: ['id' => '\d+'])]
+	#[Route(path: '/{id}/edit')]
 	#[Action(object: true)]
-	public function edit(Request $request, int $id = null): ?Response
+	public function edit(Request $request, mixed $id = null): ?Response
 	{
 		if (!$this->getEntityType()) {
 			throw new NotFoundHttpException('Not Entity Type found.');
@@ -467,17 +480,19 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			$fieldColumnMap = $this->getEntityColumnToFieldMapping();
 			foreach ($mappedPathParameters as $mappedPathParameter) {
 				$fieldName = $mappedPathParameter->getField();
-				if(!isset($fieldColumnMap[$fieldName])) {
+				if (!isset($fieldColumnMap[$fieldName])) {
 					throw new Exception(sprintf('Invalid field mapping for %s', $fieldName));
 				}
 
 				$columnName = $fieldColumnMap[$fieldName];
 				$fieldValue = $request->attributes->get($mappedPathParameter->getPathParameter());
 
-				if($this->getEntityClassMetadata()->hasAssociation($columnName)) {
+				if ($this->getEntityClassMetadata()->hasAssociation($columnName)) {
 					$associationClassName = $this->getEntityClassMetadata()->getAssociationTargetClass($columnName);
-					if(null === $fieldValue = $this->entityManager->getRepository($associationClassName)->find($fieldValue)) {
-						throw new Exception(sprintf('Cannot found "%s" association with PK %s', $columnName, $fieldValue));
+					if (null === $fieldValue = $this->entityManager->getRepository($associationClassName)->find($fieldValue)) {
+						throw new Exception(
+							sprintf('Cannot found "%s" association with PK %s', $columnName, $fieldValue)
+						);
 					}
 				}
 
@@ -538,9 +553,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 
 		return $this->response($request, [
-			'title' => $action?->title ? $this->getExpressionLanguage()->evaluate($action->title, [
-				'object' => $object,
-			]) : ($id ? 'Edit' : 'New'),
+			'title' => $action?->title ?: ($id ? 'Edit' : 'New'),
 			'object' => $object,
 			'form' => [
 				'modify' => [
@@ -554,11 +567,11 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		], $responseStatus, defaultTemplate: 'edit');
 	}
 
-	#[Route(path: '/{id}/delete', requirements: ['id' => '\d+'], methods: ['DELETE', 'OPTIONS'])]
+	#[Route(path: '/{id}/delete', methods: ['DELETE', 'OPTIONS'])]
 	#[Action(object: true)]
-	public function delete(Request $request, int $id): Response
+	public function delete(Request $request, int|string $id): Response
 	{
-		if($request->isMethod(Request::METHOD_OPTIONS)) {
+		if ($request->isMethod(Request::METHOD_OPTIONS)) {
 			return new Response;
 		}
 
@@ -571,7 +584,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		$routeVariables = $route->compile()->getPathVariables();
 
 		return new RedirectResponse($this->router->generate($this->getRoute('list')->getName(), [
-			...array_intersect_key($request->attributes->all(), array_flip($routeVariables))
+			...array_intersect_key($request->attributes->all(), array_flip($routeVariables)),
 		]));
 	}
 
@@ -755,7 +768,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	 */
 	protected function getFilterForm(Request $request): FormInterface
 	{
-		if(empty($this->forms['filter'])) {
+		if (empty($this->forms['filter'])) {
 			$form = $this->formFactory->createNamedBuilder(
 				'filter',
 				FormType::class,
@@ -882,7 +895,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			)
 		);
 
-		if($request->hasSession()) {
+		if ($request->hasSession()) {
 			$request->getSession()->set($this->getAlias().'.limit', $limit);
 		}
 
@@ -998,13 +1011,18 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 		/** @var PathParameterToFieldMap[] $mappedPathParameters */
 		$mappedPathParameters = $this->getPHPAttributes(PathParameterToFieldMap::class);
-		$urlPathParameters = array_intersect_key($request->attributes->all(), array_flip(array_filter($request->attributes->keys(), fn(string $key) => !str_starts_with($key, '_'))));
+		$urlPathParameters = array_intersect_key(
+			$request->attributes->all(),
+			array_flip(array_filter($request->attributes->keys(), fn(string $key) => !str_starts_with($key, '_')))
+		);
 		foreach ($mappedPathParameters as $mappedPathAttribute) {
-			if(!isset($urlPathParameters[$mappedPathAttribute->getPathParameter()])) {
-				throw new Exception(sprintf('Missing mapped path attribute: %s', $mappedPathAttribute->getPathParameter()));
+			if (!isset($urlPathParameters[$mappedPathAttribute->getPathParameter()])) {
+				throw new Exception(
+					sprintf('Missing mapped path attribute: %s', $mappedPathAttribute->getPathParameter())
+				);
 			}
 
-			if(!isset($columnFieldsMapping[$mappedPathAttribute->getField()])) {
+			if (!isset($columnFieldsMapping[$mappedPathAttribute->getField()])) {
 				throw new Exception(sprintf('Missing column for field: %s', $mappedPathAttribute->getField()));
 			}
 
@@ -1031,8 +1049,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				'type' => $type,
 				'column' => $column,
 				'canSelect' => $canSelect
-			]
-		) {
+		]) {
 			$isFilterApplied = $filters && !empty($filters[$column->getAlias()]) && false !== $column->getSearchable();
 
 			if ($canSelect || $isFilterApplied) {
@@ -1054,7 +1071,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 			if ($isFilterApplied) {
 				$value = $filters[$column->getAlias()];
-				$type = ($column->getSearchable() instanceof SearchableOptions ? $column->getSearchable()->getType() : null) ?? $type ?? Types::STRING;
+				$type = ($column->getSearchable() instanceof SearchableOptions ? $column->getSearchable()->getType(
+				) : null) ?? $type ?? Types::STRING;
 				$parameter = sprintf('p%s', $column->getAlias());
 
 				switch ($type) {
@@ -1181,7 +1199,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return $this->entityClassMetadata;
 	}
 
-	public function getEntityColumnToFieldMapping(): array {
+	public function getEntityColumnToFieldMapping(): array
+	{
 		return array_merge(
 			array_combine(
 				$this->getEntityClassMetadata()->getColumnNames(),
@@ -1250,7 +1269,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 	protected function getRoute(string $method = null): Route
 	{
-		if(null !== $action = array_values(array_filter($this->getActions(), fn(Action $action) => $action->getName() === $method))[0] ?? null) {
+		if (null !== $action = array_values(array_filter($this->getActions(), fn(Action $action) => $action->getName() === $method))[0] ?? null) {
 			return $action->getRoute();
 		}
 
@@ -1259,8 +1278,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 
 		$routeName = $this->getControllerClass().'::'.$method;
-		if(null === $route = $this->router->getRouteCollection()->get($routeName))
+		if (null === $route = $this->router->getRouteCollection()->get($routeName)) {
 			throw new NotFoundHttpException(sprintf('Route "%s" does not exist', $routeName));
+		}
 
 		return new Route($route->getPath(), $routeName, $route->getMethods());
 	}
