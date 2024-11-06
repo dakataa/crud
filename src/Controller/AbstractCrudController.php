@@ -2,6 +2,7 @@
 
 namespace Dakataa\Crud\Controller;
 
+use BackedEnum;
 use Closure;
 use Dakataa\Crud\Attribute\Action;
 use Dakataa\Crud\Attribute\Column;
@@ -24,6 +25,7 @@ use Dakataa\Crud\Utils\Doctrine\Paginator;
 use Dakataa\Crud\Utils\StringHelper;
 use DateTime;
 use DateTimeInterface;
+use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
@@ -168,7 +170,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	protected function compileEntityData(
 		array|object $object,
 		EntityColumnViewGroupEnum|string $viewGroup = null,
-		bool $raw = false
+		bool $raw = true
 	): array {
 		$additionalEntityFields = [];
 		if (is_array($object)) {
@@ -186,12 +188,10 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 		$result = [];
 		foreach ($this->getEntityColumns($viewGroup, includeIdentifier: true) as $column) {
-			$field = $column->getAlias();
-
+			$fieldAlias = $column->getAlias();
 			$value = null;
 			foreach (['get', 'has', 'is'] as $methodPrefix) {
-				$method = Container::camelize(sprintf('%s%s', $methodPrefix, Container::underscore($field)));
-
+				$method = sprintf('%s%s', $methodPrefix, Container::camelize(Container::underscore($fieldAlias)));
 				if (method_exists($object, $method)) {
 					$value = $object->$method();
 					break;
@@ -212,25 +212,35 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				}
 			}
 
-
-			if (null === $value && isset($additionalEntityFields[$field])) {
-				$value = $additionalEntityFields[$field];
+			if (null === $value && isset($additionalEntityFields[$fieldAlias])) {
+				$value = $additionalEntityFields[$fieldAlias];
 			}
 
 			if ($value instanceof Collection) {
-				$value = implode(', ', $value->getValues());
+				$value = new class(array_map(fn(Stringable $v) => $v->__toString(), $value->toArray())) extends ArrayCollection {
+					public function __toString()
+					{
+						return implode(', ', $this->getValues());
+					}
+				};
 			}
 
 			if ($value instanceof DateTime) {
 				$value = $value->format($column->getOption('dateFormat') ?: DateTimeInterface::ATOM);
 			}
 
-			if ($value instanceof Stringable) {
-				$value = $value->__toString();
+			if ($value instanceof BackedEnum) {
+				$value = $value->value;
 			}
 
-			if (is_object($value)) {
-				$value = json_encode($value);
+			if(!$raw) {
+				if ($value instanceof Stringable) {
+					$value = $value->__toString();
+				}
+
+				if (is_object($value)) {
+					$value = json_encode($value);
+				}
 			}
 
 			try {
@@ -281,16 +291,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 		$sorting = $this->prepareSorting($request);
 
-		$query = $this
-			->getEntityRepository()
-			->createQueryBuilder(self::ENTITY_ROOT_ALIAS);
-
-		$this
-			->buildQuery($request, $query)
-			->buildCustomQuery($request, $query);
-
 		$paginator = new Paginator(
-			$query,
+			$this->createQueryBuilder($request),
 			$request->query->getInt('page', 1),
 			$pagination ? $this->prepareMaxResults($request) : null
 		);
@@ -346,12 +348,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		if (!class_exists($exportType['writer'])) {
 			throw new Exception(sprintf('Missing Export Writer: %s', $exportType['writer']));
 		}
-		$query = $this->getEntityRepository()->createQueryBuilder('a');
-		$this
-			->buildQuery($request, $query, EntityColumnViewGroupEnum::Export)
-			->buildCustomQuery($request, $query);
+		$queryBuilder = $this->createQueryBuilder($request, EntityColumnViewGroupEnum::Export);
 
-		$objects = $query->getQuery()->getResult();
+		$objects = $queryBuilder->getQuery()->getResult();
 
 		//Excel
 		$spreadsheet = new Spreadsheet();
@@ -368,7 +367,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			$header[] = $column->getLabel();
 		}
 		$rows = [$header];
-
 		//Rows
 		foreach ($objects as $object) {
 			$rows[] = $this->compileEntityData($object, EntityColumnViewGroupEnum::Export);
@@ -420,19 +418,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	public function view(Request $request, int|string $id): ?Response
 	{
 		$action = $this->getPHPAttribute(Action::class, 'view');
-		$queryBuilder = $this
-			->getEntityRepository()
-			->createQueryBuilder(self::ENTITY_ROOT_ALIAS)
-			->where(
-				sprintf(
-					'%s.%s = :id',
-					self::ENTITY_ROOT_ALIAS,
-					$this->getEntityClassMetadata()->getSingleIdentifierFieldName()
-				)
-			)
-			->setParameter('id', $id);
-
-		$object = $queryBuilder->getQuery()->getOneOrNullResult();
+		$object = $this->getEntityRepository()->find($id);;
 		if (empty($object)) {
 			throw new NotFoundHttpException('Not Found');
 		}
@@ -462,13 +448,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 		$entityClassIdentifierFieldName = $this->getEntityClassMetadata()->getSingleIdentifierFieldName();
 		if ($id) {
-			$queryBuilder = $this
-				->getEntityRepository()
-				->createQueryBuilder(self::ENTITY_ROOT_ALIAS)
-				->where(sprintf('%s.%s = :id', self::ENTITY_ROOT_ALIAS, $entityClassIdentifierFieldName))
-				->setParameter('id', $id);
-
-			$object = $queryBuilder->getQuery()->getOneOrNullResult();
+			$object = $this->getEntityRepository()->find($id);
 			if (empty($object)) {
 				throw new NotFoundHttpException('Not Found');
 			}
@@ -977,12 +957,15 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	/**
 	 * @throws Exception
 	 */
-	protected function buildQuery(
+	protected function createQueryBuilder(
 		Request $request,
-		QueryBuilder $query,
 		EntityColumnViewGroupEnum|string $viewGroup = EntityColumnViewGroupEnum::List,
-	): self {
+	): QueryBuilder {
 		$entity = $this->getEntity();
+		$query = $this
+			->getEntityRepository()
+			->createQueryBuilder(self::ENTITY_ROOT_ALIAS);
+
 		foreach (($entity->joins ?? []) as $join) {
 			$query->{match ($join->type) {
 				Join::LEFT_JOIN => 'leftJoin',
@@ -1125,7 +1108,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			}
 		}
 
-		return $this;
+		$this->buildCustomQuery($request, $query);
+
+		return $query;
 	}
 
 	public function getEntityPrimaryColumn(): Column

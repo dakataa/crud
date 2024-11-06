@@ -5,6 +5,7 @@ namespace Dakataa\Crud;
 use Dakataa\Crud\Attribute\Entity;
 use Dakataa\Crud\Attribute\Navigation\NavigationGroup;
 use Dakataa\Crud\Attribute\Navigation\NavigationItem;
+use Dakataa\Crud\Command\MakerController;
 use Dakataa\Crud\Controller\GeneralController;
 use Dakataa\Crud\EventSubscriber\CrudSubscriber;
 use Dakataa\Crud\Service\ActionCollection;
@@ -65,6 +66,13 @@ class DakataaCrudBundle extends AbstractBundle
 			->autowire()
 			->autoconfigure();
 
+		$container
+			->services()
+			->set(MakerController::class, MakerController::class)
+			->tag('controller.service_arguments')
+			->autowire()
+			->autoconfigure();
+
 		$container->parameters()->set(self::NAME, $config);
 
 		$builder->registerAttributeForAutoconfiguration(
@@ -100,6 +108,7 @@ class DakataaCrudBundle extends AbstractBundle
 			}
 		);
 	}
+
 
 	public function prependExtension(
 		ContainerConfigurator $container,
