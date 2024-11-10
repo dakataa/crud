@@ -20,8 +20,9 @@ class Paginator
 	protected function getORMPaginator(): ORMPaginator
 	{
 		$this->query
+			->setFirstResult($this->getOffset())
 			->setMaxResults($this->maxResults)
-			->setFirstResult($this->getOffset());
+		;
 
 		return $this->ormPaginator ?: $this->ormPaginator = new ORMPaginator($this->query);
 	}

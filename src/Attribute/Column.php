@@ -5,6 +5,7 @@ namespace Dakataa\Crud\Attribute;
 use Attribute;
 use Dakataa\Crud\Attribute\Enum\EntityColumnViewGroupEnum;
 use Dakataa\Crud\Enum\SortTypeEnum;
+use Dakataa\Crud\Utils\StringHelper;
 use Stringable;
 use Symfony\Component\DependencyInjection\Container;
 
@@ -49,7 +50,7 @@ class Column
 	{
 		$label = explode('.', $this->label ?: $this->field);
 
-		return ucfirst(array_pop($label));
+		return StringHelper::titlize(Container::camelize(ucfirst(array_pop($label))));
 	}
 
 	public function setLabel(?string $label): Column
