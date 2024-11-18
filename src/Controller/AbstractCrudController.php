@@ -870,7 +870,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		$sorting = array_filter($sorting, fn($v) => in_array(strtoupper($v), ['ASC', 'DESC']));
 		$columns = array_reduce(
 			array_filter(
-				iterator_to_array($this->buildColumns($viewGroup, true)),
+				iterator_to_array($this->buildColumns($viewGroup)),
 				fn(array $c) => $c['column']->getSortable() !== false
 			),
 			fn(array $c, array $item) => [...$c, $item['column']->getField() => $item],
@@ -943,12 +943,10 @@ abstract class AbstractCrudController implements CrudControllerInterface
 					];
 
 					$entityMetadata = $this->entityManager->getClassMetadata($associationMapping['targetEntity']);
-
 				}
 			} else {
 				if (
-					!$entityMetadata->hasField($fieldName) &&
-					(!$entityMetadata->isIdentifierComposite && $fieldName !== 'compositeId')
+					!$entityMetadata->hasField($fieldName) && (!$entityMetadata->isIdentifierComposite && $fieldName !== 'compositeId')
 				) {
 					return false;
 				}
@@ -957,6 +955,12 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			if($column->getSortable()) {
 				if(!$entityMetadata->hasField($fieldName)) {
 					$column->setSortable(false);
+				}
+			}
+
+			if($column->getSearchable() !== false) {
+				if(!$entityMetadata->hasField($fieldName)) {
+					$column->setSearchable(false);
 				}
 			}
 
@@ -1058,8 +1062,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			)->setParameter($queryParameterAlias, $pathParameterValue);
 		}
 
+		$relationExpressions = [];
 		foreach (
-			$this->buildColumns($viewGroup, true) as [
+			$this->buildColumns($viewGroup) as [
 				'entityAlias' => $entityAlias,
 				'entityField' => $entityField,
 				'relations' => $relations,
@@ -1071,7 +1076,12 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 			if ($canSelect || $isFilterApplied) {
 				foreach ($relations as $relation) {
-					$query->leftJoin($relation['entity'].'.'.$relation['field'], $relation['alias']);
+					$relationExpression = $relation['entity'].'.'.$relation['field'];
+					if(in_array($relationExpression, $relationExpressions)) {
+						continue;
+					}
+					$query->leftJoin($relationExpression, $relation['alias']);
+					$relationExpressions[] = $relationExpression;
 				}
 			}
 
@@ -1173,9 +1183,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 
 		if($this->getEntityClassMetadata()->isIdentifierComposite) {
-			return new Column('compositeId', group: false, identifier: true);
+			return new Column('compositeId', group: false, searchable: false, identifier: true);
 		} else {
-			return new Column(array_shift($identifiers), group: false, identifier: true);
+			return new Column(array_shift($identifiers), group: false, searchable: false, identifier: true);
 		}
 	}
 
@@ -1214,7 +1224,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				)
 		);
 
-		if ($includeIdentifier) {
+		if ($includeIdentifier && !$searchable) {
 			$availableColumnFields = [];
 			$primaryEntityColumn = $this->getEntityPrimaryColumn();
 			foreach ($columns as $column) {
