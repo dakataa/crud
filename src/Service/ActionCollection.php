@@ -103,7 +103,7 @@ class ActionCollection
 			foreach ($reflectionMethod->getAttributes(Action::class) as $reflectionAttribute) {
 				/** @var Action $actionInstance */
 				$actionInstance = $reflectionAttribute->newInstance();
-				$name = ($actionInstance->name ?: $reflectionMethod->name);
+				$name = $reflectionMethod->name;
 				$title = ($actionInstance->name ?: StringHelper::titlize(ucfirst($reflectionMethod->name)));
 
 				$actionInstance

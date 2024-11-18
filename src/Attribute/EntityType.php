@@ -4,13 +4,14 @@ namespace Dakataa\Crud\Attribute;
 
 use Attribute;
 
-#[Attribute(Attribute::TARGET_CLASS | Attribute::TARGET_METHOD)]
+#[Attribute(Attribute::TARGET_CLASS | Attribute::TARGET_METHOD | Attribute::IS_REPEATABLE)]
 class EntityType
 {
 	public function __construct(
 		public string $fqcn,
 		public ?array $options = null,
-		public ?string $successMessage = null
+		public ?string $successMessage = null,
+		public ?string $action = null
 	) {
 	}
 

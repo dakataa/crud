@@ -95,7 +95,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	const COMPOSITE_IDENTIFIER_SEPARATOR = '-';
 
 	protected ?Entity $entity = null;
-	protected ?EntityType $entityType = null;
+	protected ?array $entityType = null;
 	protected ?ClassMetadata $entityClassMetadata = null;
 	protected ?array $actions = null;
 
@@ -130,7 +130,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		protected ?TemplateProvider $templateProvider = null
 	) {
 		$this->entity = $this->getPHPAttribute(Entity::class);
-		$this->entityType = $this->getPHPAttribute(EntityType::class);
 
 		if (empty($this->entity?->joins)) {
 			$this->entity?->setJoins($this->getPHPAttributes(EntityJoinColumn::class));
@@ -160,9 +159,16 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return $this->entity;
 	}
 
-	public function getEntityType(): ?EntityType
+	public function getEntityType(Action $action = null): ?EntityType
 	{
-		return $this->entityType;
+		if(!$this->entityType) {
+			$this->entityType = $this->getPHPAttributes(EntityType::class);
+		}
+
+		return array_filter(
+			$this->entityType,
+			fn(EntityType $t) => in_array($t->action, [$action?->name, null])
+		)[0] ?? null;
 	}
 
 	protected function compileEntityData(
@@ -311,9 +317,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				],
 			],
 			'sort' => $sorting,
-			'action' => iterator_to_array(
-				$this->actionCollection->load($this->getControllerClass(), $this->getEntity()->fqcn)
-			),
+			'action' => $this->getActions(),
 		], defaultTemplate: 'list');
 	}
 
@@ -404,7 +408,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	#[Action]
 	public function add(Request $request): ?Response
 	{
-		return $this->edit($request);
+		return $this->modify($request, $this->getAction('add'));
 	}
 
 	/**
@@ -428,19 +432,12 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		], defaultTemplate: 'view');
 	}
 
-	/**
-	 * @throws Exception
-	 */
-	#[Route(path: '/{id}/edit')]
-	#[Action(object: true)]
-	public function edit(Request $request, mixed $id = null): ?Response
+	private function modify(Request $request, Action $action = null, mixed $id = null): ?Response
 	{
-		if (!$this->getEntityType()) {
+		if (!$this->getEntityType($action)) {
 			throw new NotFoundHttpException('Not Entity Type found.');
 		}
 
-		/** @var Action|null $action */
-		$action = $this->getPHPAttribute(Action::class, 'edit');
 		$messages = [];
 
 		if ($id) {
@@ -481,12 +478,12 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			'action' => $request->getUri(),
 			'method' => Request::METHOD_POST,
 			'csrf_protection' => false,
-		], $this->getEntityType()->getOptions() ?: []);
+		], $this->getEntityType($action)?->getOptions() ?: []);
 
 		$this->onFormTypeBeforeCreate($request, $object);
 		$form = $this->formFactory->createNamed(
 			'form_'.Container::underscore($this->getEntityShortName()).'_'.(str_replace('-', '_', $id) ?? 'new'),
-			$this->getEntityType()->getFqcn(),
+			$this->getEntityType($action)?->getFqcn(),
 			$object,
 			$formOptions
 		);
@@ -509,21 +506,30 @@ abstract class AbstractCrudController implements CrudControllerInterface
 					],
 				];
 
-				$route = $this->router->getRouteCollection()->get($this->getRoute('edit')->getName());
-				$routeVariables = $route->compile()->getPathVariables();
+				$action = $this->getAction('edit') ?: $this->getAction('list');
 
-				$redirect = [
-					'route' => $this->router->getRouteCollection()->get($this->getRoute('edit')->getName()),
-					'parameters' => [
-						'id' => $this->getEntityIdentifierValueFromObject($object),
-						...(array_intersect_key($request->attributes->all(), array_flip($routeVariables))),
-					],
-				];
+				if($action) {
+					if($action->getRoute()) {
+						$route = $this->router->getRouteCollection()->get($action->getRoute()->getName());
+						$routeVariables = $route->compile()->getPathVariables();
 
-				$redirect['url'] = $this->router->generate($this->getRoute('edit')->getName(), $redirect['parameters']);
+						$redirect = [
+							'route' => $this->router->getRouteCollection()->get($action->getRoute()->getName()),
+							'parameters' => [
+								'id' => $this->getEntityIdentifierValueFromObject($object),
+								...(array_intersect_key($request->attributes->all(), array_flip($routeVariables))),
+							],
+						];
 
-				if ($request->getPreferredFormat() === 'html') {
-					return new RedirectResponse($redirect['url']);
+						$redirect['url'] = $this->router->generate(
+							$action->getRoute()->getName(),
+							$redirect['parameters']
+						);
+
+						if ($request->getPreferredFormat() === 'html') {
+							return new RedirectResponse($redirect['url']);
+						}
+					}
 				}
 			}
 		}
@@ -541,6 +547,16 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				'redirect' => $redirect,
 			] : []),
 		], $responseStatus, defaultTemplate: 'edit');
+	}
+
+	/**
+	 * @throws Exception
+	 */
+	#[Route(path: '/{id}/edit')]
+	#[Action(object: true)]
+	public function edit(Request $request, mixed $id = null): ?Response
+	{
+		return $this->modify($request, $this->getAction('edit'), $id);
 	}
 
 	#[Route(path: '/{id}/delete', methods: ['DELETE', 'OPTIONS'])]
@@ -567,7 +583,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	protected function handleBatch(Request $request): Response|FormInterface
 	{
 		$form = $this->getBatchForm($request);
-
 		if ($request->isMethod(Request::METHOD_POST)) {
 			$form->handleRequest($request);
 			if ($form->isSubmitted() && $form->isValid()) {
@@ -583,6 +598,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 					->createQueryBuilder(self::ENTITY_ROOT_ALIAS);
 
 				$criteria = $query->expr()->orX();
+
 				foreach ($ids as $id) {
 					$criteria->add(
 						$query->expr()->andX(
@@ -682,7 +698,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	{
 		$form = $this
 			->formFactory
-			->createNamedBuilder('batch', options: [
+			->createNamedBuilder('batch_'.Container::underscore($this->getEntityShortName()), options: [
 				...($this->parameterBag->get('form.type_extension.csrf.enabled') ? ['csrf_protection' => false] : []),
 			]);
 
@@ -1316,6 +1332,11 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return $this->actions ?: $this->actions = iterator_to_array(
 			$this->actionCollection->load($this->getControllerClass(), $this->getEntity()->fqcn)
 		);
+	}
+
+	public function getAction(string $name): ?Action
+	{
+		return array_values(array_filter($this->getActions(), fn(Action $action) => $action->getName() === $name))[0] ?? null;
 	}
 
 	protected function getExpressionLanguage(): ExpressionLanguage
