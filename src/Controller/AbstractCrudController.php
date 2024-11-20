@@ -278,7 +278,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	]
 	public function list(Request $request): Response
 	{
-		$action = $this->getPHPAttribute(Action::class, 'list');
+		$action = $this->getAction('list');
 
 		['pagination' => $pagination] = (new OptionsResolver)
 			->setDefined(['pagination'])
@@ -299,7 +299,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			$request->query->getInt('page', 1),
 			$pagination && (count($this->getEntityClassMetadata()->getIdentifierFieldNames()) === 1) ? $this->prepareMaxResults($request) : null
 		);
-
 		return $this->response($request, [
 			'title' => $action?->title ?: StringHelper::titlize($this->getEntityShortName()),
 			'entity' => [

@@ -38,17 +38,18 @@ class CrudSubscriber
 	#[AsEventListener]
 	public function onKernelController(ControllerArgumentsEvent $event): void
 	{
-		if (empty($actions = $event->getAttributes(Action::class))) {
+		if(!is_array($event->getController())) {
 			return;
 		}
 
-		/** @var Action $action */
-		$action = array_shift($actions);
-		[$controllerObject, $method] = $event->getController();
-
-		if ($action->name === $method && is_a($controllerObject, AbstractCrudController::class, true)) {
+		[$controllerObject] = $event->getController();
+		if (is_a($controllerObject, AbstractCrudController::class, true)) {
 			$this->controller = $controllerObject;
+		}
 
+		[$controllerClass, $method] = explode('::', $event->getRequest()->get('_controller'));
+
+		if(null === $action = $this->actionCollection->load($controllerClass, method: $method)->current()) {
 			return;
 		}
 

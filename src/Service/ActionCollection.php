@@ -72,6 +72,8 @@ class ActionCollection
 			return;
 		}
 
+		$controllerReplacementActions = $controllerReflectionClass->getAttributes(Action::class);
+
 		foreach ($controllerReflectionClass->getMethods(ReflectionMethod::IS_PUBLIC) as $reflectionMethod) {
 			$methodEntityFQCN = (($reflectionMethod->getAttributes(Entity::class)[0] ?? null)?->getArguments()[0] ?? null) ?: $controllerEntityFQCN;
 			if(null === $methodEntityFQCN) {
@@ -103,17 +105,27 @@ class ActionCollection
 			foreach ($reflectionMethod->getAttributes(Action::class) as $reflectionAttribute) {
 				/** @var Action $actionInstance */
 				$actionInstance = $reflectionAttribute->newInstance();
-				$name = $reflectionMethod->name;
-				$title = ($actionInstance->name ?: StringHelper::titlize(ucfirst($reflectionMethod->name)));
+				$name = $actionInstance->name ?: $reflectionMethod->name;
+				$replacementActionReflectionAttribute = array_values(
+					array_filter(
+						$controllerReplacementActions,
+						fn(ReflectionAttribute $refAttribute) => $refAttribute->getArguments()[0] === $name
+					)
+				)[0] ?? null;
 
-				$actionInstance
+				if($replacementActionReflectionAttribute) {
+					$actionInstance = $replacementActionReflectionAttribute->newInstance();
+				}
+
+				$title = ($actionInstance->title ?: StringHelper::titlize(ucfirst($reflectionMethod->name)));
+
+				yield $actionInstance
 					->setName($name)
+					->setMethod($reflectionMethod->name)
 					->setTitle($title)
 					->setRoute($routeAttribute)
 					->setEntity($entity)
 					->setNamespace($namespace);
-
-				yield $actionInstance;
 			}
 		}
 	}
