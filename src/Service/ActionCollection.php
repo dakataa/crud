@@ -117,7 +117,7 @@ class ActionCollection
 					$actionInstance = $replacementActionReflectionAttribute->newInstance();
 				}
 
-				$title = ($actionInstance->title ?: StringHelper::titlize(ucfirst($reflectionMethod->name)));
+				$title = ($actionInstance->title ?: StringHelper::titlize(ucfirst($name ?: $reflectionMethod->name)));
 
 				yield $actionInstance
 					->setName($name)

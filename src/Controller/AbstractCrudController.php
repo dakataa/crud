@@ -299,6 +299,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			$request->query->getInt('page', 1),
 			$pagination && (count($this->getEntityClassMetadata()->getIdentifierFieldNames()) === 1) ? $this->prepareMaxResults($request) : null
 		);
+
 		return $this->response($request, [
 			'title' => $action?->title ?: StringHelper::titlize($this->getEntityShortName()),
 			'entity' => [

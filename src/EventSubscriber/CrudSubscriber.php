@@ -42,14 +42,16 @@ class CrudSubscriber
 			return;
 		}
 
-		[$controllerObject] = $event->getController();
-		if (is_a($controllerObject, AbstractCrudController::class, true)) {
-			$this->controller = $controllerObject;
-		}
+		[$controllerObject, $method] = $event->getController();
 
-		[$controllerClass, $method] = explode('::', $event->getRequest()->get('_controller'));
+		[$controllerClass] = explode('::', $event->getRequest()->get('_controller'));
 
 		if(null === $action = $this->actionCollection->load($controllerClass, method: $method)->current()) {
+			return;
+		}
+
+		if ($action->getMethod() === $method && is_a($controllerObject, AbstractCrudController::class, true)) {
+			$this->controller = $controllerObject;
 			return;
 		}
 
