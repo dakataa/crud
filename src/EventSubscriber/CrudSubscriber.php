@@ -46,6 +46,10 @@ class CrudSubscriber
 
 		[$controllerClass] = explode('::', $event->getRequest()->get('_controller'));
 
+		if (!class_exists($controllerClass)) {
+			return;
+		}
+
 		if(null === $action = $this->actionCollection->load($controllerClass, method: $method)->current()) {
 			return;
 		}
