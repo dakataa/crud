@@ -2,7 +2,6 @@
 
 namespace Dakataa\Crud\EventSubscriber;
 
-use Dakataa\Crud\Attribute\Action;
 use Dakataa\Crud\Controller\AbstractCrudController;
 use Dakataa\Crud\Service\ActionCollection;
 use Doctrine\ORM\EntityManagerInterface;

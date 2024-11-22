@@ -946,7 +946,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				}
 			} else {
 				if (
-					!$entityMetadata->hasField($fieldName) && (!$entityMetadata->isIdentifierComposite && $fieldName !== 'compositeId')
+					false === $entityMetadata->hasField($fieldName) &&
+					false === $entityMetadata->hasAssociation($fieldName) &&
+					(!$entityMetadata->isIdentifierComposite && $fieldName !== 'compositeId')
 				) {
 					return false;
 				}
@@ -959,7 +961,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			}
 
 			if($column->getSearchable() !== false) {
-				if(!$entityMetadata->hasField($fieldName)) {
+				if(!$entityMetadata->hasField($fieldName) && !($column->getSearchable() instanceof SearchableOptions)) {
 					$column->setSearchable(false);
 				}
 			}
@@ -978,16 +980,14 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		};
 
 		foreach ($this->getEntityColumns($viewGroup, $searchable, true) as $column) {
-			if (false !== $columnData = $buildColumn($column)) {
-				yield $columnData;
-			}
-
-			if ((($searchableField = $column->getSearchable()) instanceof SearchableOptions)) {
-				if ($searchableField->getField() && false !== $columnData = $buildColumn(
-						new Column($searchableField->getField(), searchable: $searchableField, sortable: false)
+			if ($searchable && (($searchableField = $column->getSearchable()) instanceof SearchableOptions)) {
+				if (false !== $columnData = $buildColumn(
+						new Column($searchableField->getField() ?: $column->getField(), searchable: $column->getSearchable(), sortable: false)
 					)) {
 					yield $columnData;
 				}
+			} else if (false !== $columnData = $buildColumn($column)) {
+				yield $columnData;
 			}
 		}
 	}
@@ -1064,7 +1064,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 		$relationExpressions = [];
 		foreach (
-			$this->buildColumns($viewGroup) as [
+			$this->buildColumns($viewGroup, true) as [
 				'entityAlias' => $entityAlias,
 				'entityField' => $entityField,
 				'relations' => $relations,
@@ -1106,7 +1106,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 			if ($isFilterApplied) {
 				$value = $filters[$column->getAlias()];
-				$type = ($column->getSearchable() instanceof SearchableOptions ? $column->getSearchable()->getType() : null) ?? $type ?? Types::STRING;
 				$parameter = sprintf('p%s', $column->getAlias());
 
 				switch ($type) {
