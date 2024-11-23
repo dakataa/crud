@@ -784,7 +784,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				]
 			)->setMethod(Request::METHOD_GET);
 
-			foreach ($this->buildColumns(searchable: true) as $columnData) {
+			foreach ($this->buildColumns(searchable: true, includeIdentifier: false) as $columnData) {
 				[
 					'fqcn' => $fqcn,
 					'type' => $type,
@@ -913,7 +913,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 	private function buildColumns(
 		EntityColumnViewGroupEnum|string $viewGroup = null,
-		bool $searchable = false
+		bool $searchable = false,
+		bool $includeIdentifier = false,
 	): Generator {
 		$rootEntityMetadata = $this->entityManager->getClassMetadata($this->getEntity()->getFqcn());
 		$buildColumn = function (Column $column) use ($rootEntityMetadata): array|false {
@@ -979,7 +980,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			];
 		};
 
-		foreach ($this->getEntityColumns($viewGroup, $searchable, true) as $column) {
+		foreach ($this->getEntityColumns($viewGroup, $searchable, $includeIdentifier) as $column) {
 			if ($searchable && (($searchableField = $column->getSearchable()) instanceof SearchableOptions)) {
 				if (false !== $columnData = $buildColumn(
 						new Column($searchableField->getField() ?: $column->getField(), searchable: $column->getSearchable(), sortable: false)
@@ -1064,7 +1065,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 		$relationExpressions = [];
 		foreach (
-			$this->buildColumns($viewGroup, true) as [
+			$this->buildColumns($viewGroup, true, true) as [
 				'entityAlias' => $entityAlias,
 				'entityField' => $entityField,
 				'relations' => $relations,
@@ -1107,6 +1108,10 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			if ($isFilterApplied) {
 				$value = $filters[$column->getAlias()];
 				$parameter = sprintf('p%s', $column->getAlias());
+
+				if ($value instanceof BackedEnum) {
+					$value = $value->value;
+				}
 
 				switch ($type) {
 					case Types::TEXT:
@@ -1223,7 +1228,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				)
 		);
 
-		if ($includeIdentifier && !$searchable) {
+		if ($includeIdentifier) {
 			$availableColumnFields = [];
 			$primaryEntityColumn = $this->getEntityPrimaryColumn();
 			foreach ($columns as $column) {
