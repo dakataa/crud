@@ -1073,7 +1073,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				'column' => $column,
 				'canSelect' => $canSelect
 		]) {
-			$isFilterApplied = $filters && !empty($filters[$column->getAlias()]) && false !== $column->getSearchable();
+			$isFilterApplied = $filters && !is_null($filters[$column->getAlias()]) && false !== $column->getSearchable();
 
 			if ($canSelect || $isFilterApplied) {
 				foreach ($relations as $relation) {
