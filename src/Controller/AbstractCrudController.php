@@ -784,7 +784,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				]
 			)->setMethod(Request::METHOD_GET);
 
-			foreach ($this->buildColumns(searchable: true, includeIdentifier: false) as $columnData) {
+			foreach ($this->buildColumns(searchable: true) as $columnData) {
 				[
 					'fqcn' => $fqcn,
 					'type' => $type,
@@ -818,10 +818,15 @@ abstract class AbstractCrudController implements CrudControllerInterface
 						break;
 					case Types::DATE_MUTABLE:
 					case Types::DATETIME_MUTABLE:
-						$form->add($formFieldKey, DateType::class, array_merge(['placeholder' => ''], $columnOptions));
+						$form->add($formFieldKey, DateType::class, [
+							'placeholder' => '',
+							...$columnOptions
+						]);
 						break;
 					case Types::BOOLEAN:
-						$form->add($formFieldKey, CheckboxType::class, $columnOptions);
+						$form->add($formFieldKey, CheckboxType::class, [
+							...$columnOptions
+						]);
 						break;
 					default:
 						if (empty($entityType) || !is_string($entityType)) {
@@ -1072,7 +1077,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			'nullable' => $nullable,
 		]) {
 			$queryEntityField = sprintf('%s.%s', $entityAlias, $entityField);
-			$isFilterApplied = $filters && !is_null($filters[$column->getAlias()]) && false !== $column->getSearchable();
+			$isFilterApplied = $filters && !is_null($filters[$column->getAlias()] ?? null) && false !== $column->getSearchable();
 
 			if ($canSelect || $isFilterApplied) {
 				foreach ($relations as $relation) {
@@ -1088,8 +1093,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			if($entityField === 'compositeId' && $this->getEntityClassMetadata()->isIdentifierComposite) {
 				$query->addSelect(
 					sprintf(
-						'CONCAT_WS(\'-\', %s) as %s',
-						implode(', ', array_map(fn(string $field) => sprintf('IDENTITY(%s.%s)', $entityAlias, $field), $this->getEntityClassMetadata()->getIdentifier())),
+						'CONCAT(%s) as %s',
+						implode(', \'-\', ', array_map(fn(string $field) => sprintf('IDENTITY(%s.%s)', $entityAlias, $field), $this->getEntityClassMetadata()->getIdentifier())),
 						$column->getAlias()
 					)
 				);
