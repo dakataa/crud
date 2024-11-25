@@ -27,6 +27,7 @@ use DateTime;
 use DateTimeInterface;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
+use Doctrine\Common\Collections\Order;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Query\Expr\Join;
@@ -174,7 +175,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	protected function compileEntityData(
 		array|object $object,
 		EntityColumnViewGroupEnum|string $viewGroup = null,
-		bool $raw = true
+		bool $raw = false
 	): array {
 		$additionalEntityFields = [];
 		if (is_array($object)) {
@@ -293,7 +294,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 
 		$sorting = $this->prepareSorting($request);
-
 		$paginator = new Paginator(
 			$this->createQueryBuilder($request),
 			$request->query->getInt('page', 1),
@@ -858,16 +858,13 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		Request $request = null,
 		EntityColumnViewGroupEnum|string $viewGroup = null
 	): array {
-		$sorting = array_merge(
-			$this->getDefaultSort(),
-			$request->query->all('sort') ?: array_filter(
-				$request->getSession()->get(
-					$this->getAlias().'.sort', []
-				)
+		$sorting = $request->query->all('sort') ?: array_filter(
+			$request->getSession()->get(
+				$this->getAlias().'.sort', []
 			)
-		);
+		) ?: $this->getDefaultSort();
 
-		$sorting = array_filter($sorting, fn($v) => in_array(strtoupper($v), ['ASC', 'DESC']));
+		$sorting = array_filter($sorting, fn($v) => in_array(Order::tryFrom(strtoupper($v)), Order::cases()));
 		$columns = array_reduce(
 			array_filter(
 				iterator_to_array($this->buildColumns($viewGroup)),
@@ -973,6 +970,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				'entityField' => $fieldName,
 				'relations' => $relations,
 				'type' => $entityMetadata->getTypeOfField($fieldName),
+				'nullable' => $entityMetadata->hasField($fieldName) ? $entityMetadata->isNullable($fieldName) : null,
 				'column' => $column,
 				'canSelect' => $entityMetadata->hasField($fieldName) && false === $entityMetadata->hasAssociation(
 						$fieldName
@@ -1064,15 +1062,16 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 
 		$relationExpressions = [];
-		foreach (
-			$this->buildColumns($viewGroup, true, true) as [
-				'entityAlias' => $entityAlias,
-				'entityField' => $entityField,
-				'relations' => $relations,
-				'type' => $type,
-				'column' => $column,
-				'canSelect' => $canSelect
+		foreach ($this->buildColumns($viewGroup, true, true) as [
+			'entityAlias' => $entityAlias,
+			'entityField' => $entityField,
+			'relations' => $relations,
+			'type' => $type,
+			'column' => $column,
+			'canSelect' => $canSelect,
+			'nullable' => $nullable,
 		]) {
+			$queryEntityField = sprintf('%s.%s', $entityAlias, $entityField);
 			$isFilterApplied = $filters && !is_null($filters[$column->getAlias()]) && false !== $column->getSearchable();
 
 			if ($canSelect || $isFilterApplied) {
@@ -1121,9 +1120,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 						$query
 							->andWhere(
 								sprintf(
-									'%s.%s LIKE :%s',
-									$entityAlias,
-									$entityField,
+									'%s LIKE :%s',
+									$queryEntityField,
 									$parameter
 								)
 							)
@@ -1139,9 +1137,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 						}
 						$query->andWhere(
 							sprintf(
-								'DATE(%s.%s) = \'%s\'',
-								$entityAlias,
-								$entityField,
+								'DATE(%s) = \'%s\'',
+								$queryEntityField,
 								$value
 							)
 						);
@@ -1151,7 +1148,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 					default:
 					{
 						$query
-							->andWhere(sprintf("%s.%s IN (:%s)", $entityAlias, $entityField, $parameter))
+							->andWhere(sprintf("%s IN (:%s)", $queryEntityField, $parameter))
 							->setParameter($parameter, $value);
 						break;
 					}
@@ -1159,7 +1156,13 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			}
 
 			if (array_key_exists($column->getField(), $sortingFields)) {
-				$query->addOrderBy($column->getAlias(), $sortingFields[$column->getField()]);
+				if($nullable) {
+					// Move NULL values at the end
+					$query->addOrderBy(sprintf('CASE WHEN %s is null THEN 1 ELSE 0 END', $queryEntityField));
+				}
+
+				$query
+					->addOrderBy($queryEntityField, $sortingFields[$column->getField()]);
 			}
 		}
 

@@ -23,9 +23,7 @@ class ColumnNormalizer implements NormalizerInterface
 			'label' => $object->getLabel(),
 			'options' => $object->getOptions(),
 			'sortable' => $object->getSortable(),
-			'searchable' => $object->getSearchable() instanceof SearchableOptions ? [
-				'options' => $object->getSearchable()->getOptions()
-			] : $object->getSearchable(),
+			'searchable' => $object->getSearchable() !== false,
 			'identifier' => $object->isIdentifier(),
 			'group' => $object->getGroup() instanceof EntityColumnViewGroupEnum ? $object->getGroup()->name : $object->getGroup(),
 		];
