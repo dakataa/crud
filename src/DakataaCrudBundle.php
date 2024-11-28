@@ -24,12 +24,7 @@ class DakataaCrudBundle extends AbstractBundle
 
 	public function configure(DefinitionConfigurator $definition): void
 	{
-		$definition
-			->rootNode()
-			->children()
-			->variableNode('layout')//->isRequired()
-			->end()
-			->end();
+
 	}
 
 	public function loadExtension(array $config, ContainerConfigurator $container, ContainerBuilder $builder): void
@@ -108,7 +103,6 @@ class DakataaCrudBundle extends AbstractBundle
 			}
 		);
 	}
-
 
 	public function prependExtension(
 		ContainerConfigurator $container,

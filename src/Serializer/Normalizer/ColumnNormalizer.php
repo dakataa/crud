@@ -4,8 +4,6 @@ namespace Dakataa\Crud\Serializer\Normalizer;
 
 use Dakataa\Crud\Attribute\Column;
 use Dakataa\Crud\Attribute\Enum\EntityColumnViewGroupEnum;
-use Dakataa\Crud\Attribute\SearchableOptions;
-use Symfony\Component\Form\FormView;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 class ColumnNormalizer implements NormalizerInterface

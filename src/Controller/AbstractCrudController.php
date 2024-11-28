@@ -69,6 +69,7 @@ use Symfony\Component\OptionsResolver\OptionsResolver;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Routing\RouterInterface;
 use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
+use Symfony\Component\Serializer\Exception\ExceptionInterface;
 use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
 use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
 use Symfony\Component\Serializer\Normalizer\AbstractNormalizer;
@@ -104,9 +105,12 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 	private ?ExpressionLanguage $expressionLanguage = null;
 
+
+	private array $reflectionCache = [];
+
 	protected function getPHPAttributes(string $attributeFQCN, string $method = null): array
 	{
-		$reflectionClass = new ReflectionClass($this->getControllerClass());
+		$reflectionClass = $this->getReflectionClass($this->getControllerClass());
 
 		return array_map(
 			fn(ReflectionAttribute $attribute) => $attribute->newInstance(),
@@ -175,7 +179,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	protected function compileEntityData(
 		array|object $object,
 		EntityColumnViewGroupEnum|string $viewGroup = null,
-		bool $raw = false
+		bool $raw = true
 	): array {
 		$additionalEntityFields = [];
 		if (is_array($object)) {
@@ -640,7 +644,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 
 	/**
-	 * @throws Exception
+	 * @throws ExceptionInterface
 	 */
 	protected function response(
 		Request $request,
@@ -650,17 +654,11 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	): Response {
 		[, $template] = explode('::', $request->get('_controller'));
 
-		$attributes = array_merge(
-			...
-			array_map(fn(Column $column) => explode('.', $column->getField()),
-				iterator_to_array($this->getEntityColumns()))
-		);
-
 		$format = $this->templateProvider ? $request->getPreferredFormat() : 'json';
 		switch ($format) {
 			case 'json':
 			{
-				$classMetadataFactory = new ClassMetadataFactory(new AttributeLoader());
+				$classMetadataFactory = new ClassMetadataFactory(new AttributeLoader);
 				$serializer = new Serializer(
 					[
 						new FormErrorNormalizer,
@@ -675,7 +673,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 						new ObjectNormalizer($classMetadataFactory, defaultContext: [
 							AbstractNormalizer::CIRCULAR_REFERENCE_HANDLER => fn() => null,
 							AbstractNormalizer::GROUPS => ['view'],
-//							AbstractNormalizer::ATTRIBUTES => $attributes
 						]),
 					]
 				);
@@ -720,7 +717,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 						str_replace('batch', '', $reflectionMethod->getShortName())
 					),
 					array_filter(
-						(new ReflectionClass($this->getControllerClass()))->getMethods(
+						$this->getReflectionClass($this->getControllerClass())->getMethods(
 							ReflectionMethod::IS_PUBLIC | ReflectionMethod::IS_PROTECTED
 						),
 						fn(ReflectionMethod $reflectionMethod) => str_starts_with(
@@ -820,12 +817,12 @@ abstract class AbstractCrudController implements CrudControllerInterface
 					case Types::DATETIME_MUTABLE:
 						$form->add($formFieldKey, DateType::class, [
 							'placeholder' => '',
-							...$columnOptions
+							...$columnOptions,
 						]);
 						break;
 					case Types::BOOLEAN:
 						$form->add($formFieldKey, CheckboxType::class, [
-							...$columnOptions
+							...$columnOptions,
 						]);
 						break;
 					default:
@@ -986,10 +983,18 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		foreach ($this->getEntityColumns($viewGroup, $searchable, $includeIdentifier) as $column) {
 			if ($searchable && (($searchableField = $column->getSearchable()) instanceof SearchableOptions)) {
 				if (false !== $columnData = $buildColumn(
-						new Column($searchableField->getField() ?: $column->getField(), searchable: $column->getSearchable(), sortable: false)
+						(clone $column)->setSortable(false)
 					)) {
 					yield $columnData;
 				}
+
+				// Add Search Column
+				if ($searchableField->getField() && false !== $columnData = $buildColumn(
+						new Column($searchableField->getField(), $column->getLabel(), searchable: $column->getSearchable(), sortable: false)
+					)) {
+					yield $columnData;
+				}
+
 			} else if (false !== $columnData = $buildColumn($column)) {
 				yield $columnData;
 			}
@@ -1085,6 +1090,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 					if(in_array($relationExpression, $relationExpressions)) {
 						continue;
 					}
+
 					$query->leftJoin($relationExpression, $relation['alias']);
 					$relationExpressions[] = $relationExpression;
 				}
@@ -1291,7 +1297,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	public function getEntityShortName(): string
 	{
 		try {
-			$classInstance = new ReflectionClass($this->getEntity()->getFqcn());
+			$classInstance = $this->getReflectionClass($this->getEntity()->getFqcn());
 			$className = $classInstance->getShortName();
 		} catch (ReflectionException) {
 			throw new Exception(
@@ -1368,5 +1374,10 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 
 		return $this->expressionLanguage;
+	}
+
+	private function getReflectionClass(string $class): ReflectionClass
+	{
+		return $this->reflectionCache[$class] ??= new ReflectionClass($class);
 	}
 }
