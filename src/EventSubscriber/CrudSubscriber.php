@@ -2,7 +2,6 @@
 
 namespace Dakataa\Crud\EventSubscriber;
 
-use Dakataa\Crud\Attribute\Action;
 use Dakataa\Crud\Controller\AbstractCrudController;
 use Dakataa\Crud\Service\ActionCollection;
 use Doctrine\ORM\EntityManagerInterface;
@@ -11,7 +10,7 @@ use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Form\FormFactoryInterface;
-use Symfony\Component\HttpKernel\Event\ControllerEvent;
+use Symfony\Component\HttpKernel\Event\ControllerArgumentsEvent;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\Routing\RouterInterface;
 use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
@@ -36,19 +35,26 @@ class CrudSubscriber
 	private ?AbstractCrudController $controller = null;
 
 	#[AsEventListener]
-	public function onKernelController(ControllerEvent $event): void
+	public function onKernelController(ControllerArgumentsEvent $event): void
 	{
-		if (empty($actions = $event->getAttributes(Action::class))) {
+		if(!is_array($event->getController())) {
 			return;
 		}
 
-		/** @var Action $action */
-		$action = array_shift($actions);
 		[$controllerObject, $method] = $event->getController();
 
-		if ($action->name === $method && is_a($controllerObject, AbstractCrudController::class, true)) {
-			$this->controller = $controllerObject;
+		[$controllerClass] = explode('::', $event->getRequest()->get('_controller'));
 
+		if (!class_exists($controllerClass)) {
+			return;
+		}
+
+		if(null === $action = $this->actionCollection->load($controllerClass, method: $method)->current()) {
+			return;
+		}
+
+		if ($action->getMethod() === $method && is_a($controllerObject, AbstractCrudController::class, true)) {
+			$this->controller = $controllerObject;
 			return;
 		}
 
@@ -69,7 +75,7 @@ class CrudSubscriber
 
 			public function __construct(
 				protected CrudSubscriber $crudSubscriber,
-				protected ControllerEvent $controllerEvent,
+				protected ControllerArgumentsEvent $controllerEvent,
 				FormFactoryInterface $formFactory,
 				RouterInterface $router,
 				EventDispatcherInterface $dispatcher,
@@ -130,7 +136,7 @@ class CrudSubscriber
 		$event->setController([$this->controller, $action->name], $event->getAttributes());
 	}
 
-	public function getPHPAttributes(ControllerEvent $controllerEvent, string $attributeClass): array
+	public function getPHPAttributes(ControllerArgumentsEvent $controllerEvent, string $attributeClass): array
 	{
 		$attributes = array_reverse($controllerEvent->getAttributes($attributeClass));
 		if (!empty($attributes)) {

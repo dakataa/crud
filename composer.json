@@ -21,10 +21,13 @@
     "symfony/form": "^7.0",
     "symfony/validator": "^7.0",
     "doctrine/orm": ">=2.10.0",
-    "phpoffice/phpspreadsheet": "^1.29",
+    "phpoffice/phpspreadsheet": "2.3.0.0",
     "symfony/framework-bundle": "^7.0",
     "symfony/security-bundle": "^7.0",
     "symfony/serializer": "^7.0",
     "symfony/expression-language": "^7.0"
+  },
+  "require-dev": {
+    "symfony/maker-bundle": "^1.61"
   }
 }

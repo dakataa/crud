@@ -4,8 +4,6 @@ namespace Dakataa\Crud\Serializer\Normalizer;
 
 use Dakataa\Crud\Attribute\Column;
 use Dakataa\Crud\Attribute\Enum\EntityColumnViewGroupEnum;
-use Dakataa\Crud\Attribute\SearchableOptions;
-use Symfony\Component\Form\FormView;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 class ColumnNormalizer implements NormalizerInterface
@@ -23,9 +21,7 @@ class ColumnNormalizer implements NormalizerInterface
 			'label' => $object->getLabel(),
 			'options' => $object->getOptions(),
 			'sortable' => $object->getSortable(),
-			'searchable' => $object->getSearchable() instanceof SearchableOptions ? [
-				'options' => $object->getSearchable()->getOptions()
-			] : $object->getSearchable(),
+			'searchable' => $object->getSearchable() !== false,
 			'identifier' => $object->isIdentifier(),
 			'group' => $object->getGroup() instanceof EntityColumnViewGroupEnum ? $object->getGroup()->name : $object->getGroup(),
 		];

@@ -8,13 +8,16 @@ use Symfony\Component\Routing\Attribute\Route;
 #[Attribute(Attribute::TARGET_METHOD | Attribute::TARGET_CLASS)]
 class Action
 {
+	private ?string $method = null;
+
 	public function __construct(
 		public ?string $name = null,
 		public ?string $title = null,
 		public ?Route $route = null,
 		public ?bool $object = false,
 		public ?string $namespace = null,
-		public ?string $entity = null
+		public ?string $entity = null,
+		public ?array $options = null
 	) {
 	}
 
@@ -85,6 +88,18 @@ class Action
 	public function setEntity(?string $entity): Action
 	{
 		$this->entity = $entity;
+
+		return $this;
+	}
+
+	public function getMethod(): ?string
+	{
+		return $this->method;
+	}
+
+	public function setMethod(?string $method): Action
+	{
+		$this->method = $method;
 
 		return $this;
 	}
