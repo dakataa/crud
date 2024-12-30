@@ -50,7 +50,6 @@ use Symfony\Component\DependencyInjection\Container;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\ExpressionLanguage\ExpressionLanguage;
-use Symfony\Component\Form\Extension\Core\Type\CheckboxType;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
 use Symfony\Component\Form\Extension\Core\Type\CollectionType;
 use Symfony\Component\Form\Extension\Core\Type\DateType;
@@ -242,15 +241,15 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				$value = $value->value;
 			}
 
-			if(!$raw) {
+//			if(!$raw) {
+			if (is_object($value)) {
 				if ($value instanceof Stringable) {
 					$value = $value->__toString();
-				}
-
-				if (is_object($value)) {
+				} else {
 					$value = json_encode($value);
 				}
 			}
+//			}
 
 			try {
 				$enum = $column->getEnum() ?: [];
@@ -486,7 +485,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 		$this->onFormTypeBeforeCreate($request, $object);
 		$form = $this->formFactory->createNamed(
-			'form_'.Container::underscore($this->getEntityShortName()).'_'.(str_replace('-', '_', $id) ?? 'new'),
+			'form_'.Container::underscore($this->getEntityShortName()).'_'.(str_replace('-', '_', $id) ?: 'new'),
 			$this->getEntityType($action)?->getFqcn(),
 			$object,
 			$formOptions
@@ -535,12 +534,14 @@ abstract class AbstractCrudController implements CrudControllerInterface
 						}
 					}
 				}
+			} else {
+				$responseStatus = 400;
 			}
 		}
 
 		return $this->response($request, [
 			'title' => $action?->title ?: ($id ? 'Edit' : 'New'),
-			'object' => $object,
+			'object' => $this->compileEntityData($object),
 			'form' => [
 				'modify' => [
 					'view' => $form->createView(),
@@ -670,10 +671,10 @@ abstract class AbstractCrudController implements CrudControllerInterface
 							DateTimeNormalizer::FORMAT_KEY => 'Y-m-d H:i:s',
 						]),
 						new RouteNormalizer,
-						new ObjectNormalizer($classMetadataFactory, defaultContext: [
-							AbstractNormalizer::CIRCULAR_REFERENCE_HANDLER => fn() => null,
-							AbstractNormalizer::GROUPS => ['view'],
-						]),
+//						new ObjectNormalizer($classMetadataFactory, defaultContext: [
+//							AbstractNormalizer::CIRCULAR_REFERENCE_HANDLER => fn() => null,
+//							AbstractNormalizer::GROUPS => ['view'],
+//						]),
 					]
 				);
 
@@ -788,6 +789,10 @@ abstract class AbstractCrudController implements CrudControllerInterface
 					'column' => $column,
 				] = $columnData;
 
+				if(false === $column->getSearchable()) {
+					continue;
+				}
+
 				$formFieldKey = $column->getAlias();
 				$columnOptions = [
 					'label' => $column->getLabel(),
@@ -821,7 +826,12 @@ abstract class AbstractCrudController implements CrudControllerInterface
 						]);
 						break;
 					case Types::BOOLEAN:
-						$form->add($formFieldKey, CheckboxType::class, [
+						$form->add($formFieldKey, ChoiceType::class, [
+							'choices' => [
+								'Yes' => true,
+								'No' => false,
+							],
+							'placeholder' => 'All',
 							...$columnOptions,
 						]);
 						break;
@@ -961,7 +971,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			}
 
 			if($column->getSearchable() !== false) {
-				if(!$entityMetadata->hasField($fieldName) && !($column->getSearchable() instanceof SearchableOptions)) {
+				if(false === $entityMetadata->hasField($fieldName) && false === ($column->getSearchable() instanceof SearchableOptions)) {
 					$column->setSearchable(false);
 				}
 			}
@@ -982,16 +992,19 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 		foreach ($this->getEntityColumns($viewGroup, $searchable, $includeIdentifier) as $column) {
 			if ($searchable && (($searchableField = $column->getSearchable()) instanceof SearchableOptions)) {
-				if (false !== $columnData = $buildColumn(
-						(clone $column)->setSortable(false)
-					)) {
-					yield $columnData;
-				}
-
-				// Add Search Column
+				$hasSearchableFieldForColumn = false;
+				// Add Search Column if different field passed
 				if ($searchableField->getField() && false !== $columnData = $buildColumn(
 						new Column($searchableField->getField(), $column->getLabel(), searchable: $column->getSearchable(), sortable: false)
 					)) {
+					yield $columnData;
+					$hasSearchableFieldForColumn = true;
+				}
+
+				if (false !== $columnData = $buildColumn(
+						(clone $column)->setSearchable($hasSearchableFieldForColumn ? false : $column->getSearchable())->setSortable(false)
+					)) {
+
 					yield $columnData;
 				}
 
