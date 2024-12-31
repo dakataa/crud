@@ -1095,7 +1095,17 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			'nullable' => $nullable,
 		]) {
 			$queryEntityField = sprintf('%s.%s', $entityAlias, $entityField);
-			$isFilterApplied = $filters && !is_null($filters[$column->getAlias()] ?? null) && false !== $column->getSearchable();
+			$value = $filters[$column->getAlias()] ?? null;
+
+			if ($value instanceof BackedEnum) {
+				$value = $value->value;
+			}
+
+			if($value instanceof Collection) {
+				$value = $value->isEmpty() ? null : $value;
+			}
+
+			$isFilterApplied = $filters && null !== $value && false !== $column->getSearchable();
 
 			if ($canSelect || $isFilterApplied) {
 				foreach ($relations as $relation) {
@@ -1129,12 +1139,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			}
 
 			if ($isFilterApplied) {
-				$value = $filters[$column->getAlias()];
 				$parameter = sprintf('p%s', $column->getAlias());
-
-				if ($value instanceof BackedEnum) {
-					$value = $value->value;
-				}
 
 				switch ($type) {
 					case Types::TEXT:

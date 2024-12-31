@@ -28,7 +28,7 @@ class FormViewNormalizer implements NormalizerInterface, NormalizerAwareInterfac
 		 */
 		['block_prefixes' => $blockPrefixes, 'errors' => $errors, 'data' => $data, 'choices' => $choices] = $object->vars + ['choices' => null];
 
-		$data = ($choices ? array_map(fn(ChoiceView $c) => $c->label, array_filter($choices, fn(ChoiceView $c) => in_array($c->data, $data instanceof ArrayCollection ? $data->getValues() : (is_array($data) ? $data : [$data]), true))) ?: null : $data);
+		$data = ($choices ? array_values(array_map(fn(ChoiceView $c) => $c->value, array_filter($choices, fn(ChoiceView $c) => in_array($c->data, $data instanceof ArrayCollection ? $data->getValues() : (is_array($data) ? $data : [$data]), true)))) ?: null : $data);
 
 		return [
 			'type' => array_slice($blockPrefixes, -2, 1)[0] ?? 'form',
