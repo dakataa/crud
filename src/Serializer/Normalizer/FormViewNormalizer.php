@@ -26,12 +26,17 @@ class FormViewNormalizer implements NormalizerInterface, NormalizerAwareInterfac
 		/**
 		 * @var FormErrorIterator $errors
 		 */
-		['block_prefixes' => $blockPrefixes, 'errors' => $errors, 'data' => $data, 'choices' => $choices] = $object->vars + ['choices' => null];
+		['block_prefixes' => $blockPrefixes, 'errors' => $errors, 'data' => $data, 'choices' => $choices, 'multiple' => $multiple] = $object->vars + ['choices' => null, 'multiple' => false];
 
 		$data = ($choices ? array_values(array_map(fn(ChoiceView $c) => $c->value, array_filter($choices, fn(ChoiceView $c) => in_array($c->data, $data instanceof ArrayCollection ? $data->getValues() : (is_array($data) ? $data : [$data]), true)))) ?: null : $data);
+		if(!$multiple && is_array($data)) {
+			$data = array_shift($data);
+		}
+
+		$type = array_slice($blockPrefixes, -2, 1)[0] ?? 'form';
 
 		return [
-			'type' => array_slice($blockPrefixes, -2, 1)[0] ?? 'form',
+			'type' => $type,
 			'errors' => $this->normalizer->normalize($errors),
 			...array_intersect_key(
 				$object->vars,
@@ -65,7 +70,7 @@ class FormViewNormalizer implements NormalizerInterface, NormalizerAwareInterfac
 				])
 			),
 			'data' => $data,
-			'children' => $this->normalizer->normalize($object->children),
+			'children' => empty($choices) ? $this->normalizer->normalize($object->children) : [],
 		];
 	}
 
