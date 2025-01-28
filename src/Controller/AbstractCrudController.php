@@ -74,7 +74,6 @@ use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
 use Symfony\Component\Serializer\Normalizer\AbstractNormalizer;
 use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
 use Symfony\Component\Serializer\Normalizer\DateTimeNormalizer;
-use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
 use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\Validator\Constraints as Assert;
@@ -274,8 +273,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	}
 
 	/**
-	 * @throws Exception
-	 */
+	 * @throws ExceptionInterface
+     */
 	#[
 		Route,
 		Action(options: ['pagination' => true]),

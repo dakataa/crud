@@ -36,7 +36,7 @@ class NavigationNormalizer implements NormalizerInterface, NormalizerAwareInterf
 			...($object instanceof NavigationItem ? [
 				'route' => $this->normalizer->normalize($this->router->getRouteCollection()->get($object->getControllerFQCN().'::'.$object->getControllerMethod())),
 			] : [
-				'items' => array_map(fn(mixed $o) => $this->normalize($o, $format, $context), $object->items)
+				'items' => array_map(fn(NavigationItem|NavigationGroup $o) => $this->normalize($o, $format, $context), $object->items ?: [])
 			])
 		];
 	}
