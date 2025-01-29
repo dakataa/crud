@@ -23,12 +23,20 @@ with ReactJS Package [dakataa/crud-react](https://github.com/dakataa/crud-react)
 
    add routes without recipe in config/routes/annotation.yaml:
 	```yaml
-    dakataa_crud:
+	dakataa_crud:
 		resource: '@DakataaCrudBundle/src/Controller'
 		type: attribute
 		prefix: /_crud
     ```
-4. Create first controller.
+4. Allow controllers to inject services.
+   Add this code to your services.yaml controllers are imported separately to make sure services can be injected
+	```yaml
+	App\Controller\:
+		resource: '../src/Controller'
+		tags: [ 'controller.service_arguments' ]
+	```
+
+5. Create first controller.
    Standard way:
    ```php
    namespace App\Controller;
