@@ -19,7 +19,6 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
 
 class ActionCollection
 {
-
 	public function __construct(
 		#[AutowireLocator('dakataa.crud.entity')]
 		private readonly ServiceLocator $handlers,
@@ -37,7 +36,7 @@ class ActionCollection
 		}
 	}
 
-	public function load(string $controllerFQCN, ?string $entityFCQN = null): Generator
+	public function load(string $controllerFQCN, ?string $entityFCQN = null, ?string $method = null): Generator
 	{
 		if (!class_exists($controllerFQCN)) {
 			throw new InvalidArgumentException(sprintf('Class "%s" does not exist.', $controllerFQCN));
@@ -51,7 +50,10 @@ class ActionCollection
 		);
 
 		$controllerReflectionClass = new ReflectionClass($controllerFQCN);
-		$controllerEntityFQCN = ($controllerReflectionClass->getAttributes(Entity::class)[0] ?? null)->getArguments()[0] ?? null;
+		$controllerEntityFQCN = ($controllerReflectionClass->getAttributes(Entity::class)[0] ?? null)?->getArguments()[0] ?? null;
+		if(null === $controllerEntityFQCN) {
+			return;
+		}
 
 		$isAccessGranted = function (ReflectionClass|ReflectionMethod $reflection): bool {
 			/** @var IsGranted[] $isGrantedAttributes */
@@ -73,6 +75,8 @@ class ActionCollection
 			return;
 		}
 
+		$controllerReplacementActions = $controllerReflectionClass->getAttributes(Action::class);
+
 		foreach ($controllerReflectionClass->getMethods(ReflectionMethod::IS_PUBLIC) as $reflectionMethod) {
 			$methodEntityFQCN = (($reflectionMethod->getAttributes(Entity::class)[0] ?? null)?->getArguments()[0] ?? null) ?: $controllerEntityFQCN;
 			if(null === $methodEntityFQCN) {
@@ -80,6 +84,10 @@ class ActionCollection
 			}
 
 			if($entityFCQN && $entityFCQN !== $methodEntityFQCN) {
+				continue;
+			}
+
+			if($method && $method !== $reflectionMethod->name) {
 				continue;
 			}
 
@@ -100,17 +108,27 @@ class ActionCollection
 			foreach ($reflectionMethod->getAttributes(Action::class) as $reflectionAttribute) {
 				/** @var Action $actionInstance */
 				$actionInstance = $reflectionAttribute->newInstance();
-				$name = ($actionInstance->name ?: $reflectionMethod->name);
-				$title = ($actionInstance->name ?: StringHelper::titlize(ucfirst($reflectionMethod->name)));
+				$name = $actionInstance->name ?: $reflectionMethod->name;
+				$replacementActionReflectionAttribute = array_values(
+					array_filter(
+						$controllerReplacementActions,
+						fn(ReflectionAttribute $refAttribute) => $refAttribute->getArguments()[0] === $name
+					)
+				)[0] ?? null;
 
-				$actionInstance
+				if($replacementActionReflectionAttribute) {
+					$actionInstance = $replacementActionReflectionAttribute->newInstance();
+				}
+
+				$title = ($actionInstance->title ?: StringHelper::titlize(ucfirst($name ?: $reflectionMethod->name)));
+
+				yield $actionInstance
 					->setName($name)
+					->setMethod($reflectionMethod->name)
 					->setTitle($title)
 					->setRoute($routeAttribute)
 					->setEntity($entity)
 					->setNamespace($namespace);
-
-				yield $actionInstance;
 			}
 		}
 	}

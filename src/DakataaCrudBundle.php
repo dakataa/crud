@@ -5,6 +5,7 @@ namespace Dakataa\Crud;
 use Dakataa\Crud\Attribute\Entity;
 use Dakataa\Crud\Attribute\Navigation\NavigationGroup;
 use Dakataa\Crud\Attribute\Navigation\NavigationItem;
+use Dakataa\Crud\Command\MakerController;
 use Dakataa\Crud\Controller\GeneralController;
 use Dakataa\Crud\EventSubscriber\CrudSubscriber;
 use Dakataa\Crud\Service\ActionCollection;
@@ -23,12 +24,7 @@ class DakataaCrudBundle extends AbstractBundle
 
 	public function configure(DefinitionConfigurator $definition): void
 	{
-		$definition
-			->rootNode()
-			->children()
-			->variableNode('layout')//->isRequired()
-			->end()
-			->end();
+
 	}
 
 	public function loadExtension(array $config, ContainerConfigurator $container, ContainerBuilder $builder): void
@@ -61,6 +57,13 @@ class DakataaCrudBundle extends AbstractBundle
 		$container
 			->services()
 			->set(GeneralController::class, GeneralController::class)
+			->tag('controller.service_arguments')
+			->autowire()
+			->autoconfigure();
+
+		$container
+			->services()
+			->set(MakerController::class, MakerController::class)
 			->tag('controller.service_arguments')
 			->autowire()
 			->autoconfigure();

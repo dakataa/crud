@@ -2,7 +2,8 @@
 
 namespace Dakataa\Crud\Serializer\Normalizer;
 
-use Symfony\Component\Form\FormError;
+use Doctrine\Common\Collections\ArrayCollection;
+use Symfony\Component\Form\ChoiceList\View\ChoiceView;
 use Symfony\Component\Form\FormErrorIterator;
 use Symfony\Component\Form\FormView;
 use Symfony\Component\Serializer\Normalizer\NormalizerAwareInterface;
@@ -13,15 +14,29 @@ class FormViewNormalizer implements NormalizerInterface, NormalizerAwareInterfac
 {
 	use NormalizerAwareTrait;
 
+	/**
+	 * @param FormView|null $object
+	 * @param string|null $format
+	 * @param array $context
+	 * @return array
+	 * @throws \Symfony\Component\Serializer\Exception\ExceptionInterface
+	 */
 	public function normalize(mixed $object, ?string $format = null, array $context = []): array
 	{
 		/**
 		 * @var FormErrorIterator $errors
 		 */
-		['block_prefixes' => $blockPrefixes, 'errors' => $errors] = $object->vars;
+		['block_prefixes' => $blockPrefixes, 'errors' => $errors, 'data' => $data, 'choices' => $choices, 'multiple' => $multiple] = $object->vars + ['choices' => null, 'multiple' => false];
+
+		$data = ($choices ? array_values(array_map(fn(ChoiceView $c) => $c->value, array_filter($choices, fn(ChoiceView $c) => in_array($c->data, $data instanceof ArrayCollection ? $data->getValues() : (is_array($data) ? $data : [$data]), true)))) ?: null : $data);
+		if(!$multiple && is_array($data)) {
+			$data = array_shift($data);
+		}
+
+		$type = array_slice($blockPrefixes, -2, 1)[0] ?? 'form';
 
 		return [
-			'type' => array_slice($blockPrefixes, -2, 1)[0] ?? 'form',
+			'type' => $type,
 			'errors' => $this->normalizer->normalize($errors),
 			...array_intersect_key(
 				$object->vars,
@@ -54,7 +69,8 @@ class FormViewNormalizer implements NormalizerInterface, NormalizerAwareInterfac
 					'multiple'
 				])
 			),
-			'children' => $this->normalizer->normalize($object->children),
+			'data' => $data,
+			'children' => empty($choices) ? $this->normalizer->normalize($object->children) : [],
 		];
 	}
 

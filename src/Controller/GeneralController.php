@@ -29,6 +29,7 @@ class GeneralController
 			new RouteNormalizer,
 		]);
 
+
 		return new JsonResponse(
 			$serializer->normalize($navigation->getItems(), context: [
 				AbstractNormalizer::CIRCULAR_REFERENCE_HANDLER => fn() => null,
