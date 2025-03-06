@@ -168,10 +168,10 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			$this->entityType = $this->getPHPAttributes(EntityType::class);
 		}
 
-		return array_filter(
+		return array_values(array_filter(
 			$this->entityType,
 			fn(EntityType $t) => in_array($t->action, [$action?->name, null])
-		)[0] ?? null;
+		))[0] ?? null;
 	}
 
 	protected function compileEntityData(
