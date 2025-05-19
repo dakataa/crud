@@ -504,7 +504,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 				$messages = [
 					'success' => [
-						$this->getEntityType()->getSuccessMessage() ?: 'Item was saved successfully',
+						$this->getEntityType()?->getSuccessMessage() ?: 'Item was saved successfully',
 					],
 				];
 

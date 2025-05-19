@@ -22,6 +22,7 @@ class Column
 		protected EntityColumnViewGroupEnum|string|null|false $group = null,
 		protected int|float|string|Stringable|null $value = null,
 		protected SearchableOptions|bool|null $searchable = null,
+		protected bool $visible = true,
 		protected bool|SortTypeEnum $sortable = true,
 		protected array $options = [],
 		protected string|array|null $roles = null,
@@ -128,6 +129,18 @@ class Column
 	public function setSearchable(SearchableOptions|bool $searchable): Column
 	{
 		$this->searchable = $searchable;
+
+		return $this;
+	}
+
+	public function isVisible(): bool
+	{
+		return $this->visible;
+	}
+
+	public function setVisible(bool $visible): Column
+	{
+		$this->visible = $visible;
 
 		return $this;
 	}

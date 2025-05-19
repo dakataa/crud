@@ -1,7 +1,7 @@
 # CRUD Dashboard
 Create fast and easy CRUD Dashboard.
 This package itself works as a REST API and can be used
-with ReactJS Package [dakataa/crud-react](https://github.com/dakataa/crud-react), or you can enable **Twig** version by adding additional package [dakataa/crud-twig](https://github.com/dakataa/crud-twig).
+with ReactJS Package [@dakataa/crud-react](https://github.com/dakataa/crud-react), or you can enable **Twig** version by adding additional package [@dakataa/crud-twig](https://github.com/dakataa/crud-twig).
 
 ## How to Install
 1. Setup Symfony Project.

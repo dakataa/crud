@@ -9,21 +9,22 @@ use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 class ColumnNormalizer implements NormalizerInterface
 {
 	/**
-	 * @param Column $object
+	 * @param Column $data
 	 * @param string|null $format
 	 * @param array $context
 	 * @return array
 	 */
-	public function normalize(mixed $object, ?string $format = null, array $context = []): array
+	public function normalize(mixed $data, ?string $format = null, array $context = []): array
 	{
 		return [
-			'field' => $object->getField(),
-			'label' => $object->getLabel(),
-			'options' => $object->getOptions(),
-			'sortable' => $object->getSortable(),
-			'searchable' => $object->getSearchable() !== false,
-			'identifier' => $object->isIdentifier(),
-			'group' => $object->getGroup() instanceof EntityColumnViewGroupEnum ? $object->getGroup()->name : $object->getGroup(),
+			'field' => $data->getField(),
+			'label' => $data->getLabel(),
+			'options' => $data->getOptions(),
+			'sortable' => $data->getSortable(),
+			'searchable' => $data->getSearchable() !== false,
+			'identifier' => $data->isIdentifier(),
+			'group' => $data->getGroup() instanceof EntityColumnViewGroupEnum ? $data->getGroup()->name : $data->getGroup(),
+			'visible' => $data->isVisible(),
 		];
 	}
 
