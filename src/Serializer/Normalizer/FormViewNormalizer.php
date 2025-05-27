@@ -66,11 +66,17 @@ class FormViewNormalizer implements NormalizerInterface, NormalizerAwareInterfac
 					'submitted',
 					'checked',
 					'expanded',
-					'multiple'
+					'multiple',
+					'allow_add',
+					'allow_delete',
+					'prototype_name'
 				])
 			),
 			'data' => $data,
 			'children' => empty($choices) ? $this->normalizer->normalize($object->children) : [],
+			...(isset($object->vars['prototype']) ? [
+				'prototype' => $this->normalizer->normalize($object->vars['prototype']),
+			] : []),
 		];
 	}
 
