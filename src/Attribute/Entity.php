@@ -13,8 +13,12 @@ class Entity
 	 * @param string $alias
 	 * @param array & Column[]|null $columns
 	 * @param array & JoinColumn[]|null $joins
+	 * @param array & string[]|null $actions
 	 * @param array & EntityGroup[]|null $group
 	 * @param array & EntitySort[]|null $sort
+	 * @param bool $pagination
+	 * @param bool $filter
+	 * @param bool $batch
 	 */
 	public function __construct(
 		public string $fqcn,
@@ -22,7 +26,11 @@ class Entity
 		public ?array $columns = null,
 		public ?array $joins = null,
 		public array|null $group = null,
-		public array|null $sort = null
+		public array|null $sort = null,
+		public ?array $actions = null,
+		public bool $pagination = true,
+		public bool $filter = true,
+		public bool $batch = true
 	) {
 	}
 
@@ -94,6 +102,54 @@ class Entity
 	public function setSort(?array $sort): void
 	{
 		$this->sort = $sort;
+	}
+
+	public function isPagination(): bool
+	{
+		return $this->pagination;
+	}
+
+	public function setPagination(bool $pagination): Entity
+	{
+		$this->pagination = $pagination;
+
+		return $this;
+	}
+
+	public function isBatch(): bool
+	{
+		return $this->batch;
+	}
+
+	public function setBatch(bool $batch): Entity
+	{
+		$this->batch = $batch;
+
+		return $this;
+	}
+
+	public function getActions(): ?array
+	{
+		return $this->actions;
+	}
+
+	public function setActions(?array $actions): Entity
+	{
+		$this->actions = $actions;
+
+		return $this;
+	}
+
+	public function isFilter(): bool
+	{
+		return $this->filter;
+	}
+
+	public function setFilter(bool $filter): Entity
+	{
+		$this->filter = $filter;
+
+		return $this;
 	}
 
 }
