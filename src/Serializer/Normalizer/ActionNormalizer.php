@@ -32,7 +32,7 @@ class ActionNormalizer implements NormalizerInterface, NormalizerAwareInterface
 			'namespace' => $object->getNamespace(),
 			'name' => $object->getName(),
 			'title' => $object->getTitle(),
-			'object' => $object->getObject(),
+			'visibility' => $object->getVisibility(),
 			'route' => $this->normalizer->normalize($route)
 		];
 	}

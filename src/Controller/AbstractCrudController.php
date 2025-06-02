@@ -11,6 +11,7 @@ use Dakataa\Crud\Attribute\EntityGroup;
 use Dakataa\Crud\Attribute\EntityJoinColumn;
 use Dakataa\Crud\Attribute\EntitySort;
 use Dakataa\Crud\Attribute\EntityType;
+use Dakataa\Crud\Attribute\Enum\ActionVisibilityEnum;
 use Dakataa\Crud\Attribute\Enum\EntityColumnViewGroupEnum;
 use Dakataa\Crud\Attribute\PathParameterToFieldMap;
 use Dakataa\Crud\Attribute\SearchableOptions;
@@ -164,7 +165,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	public function getEntityType(Action $action = null): ?EntityType
 	{
 		if (!$this->entityType) {
-			$this->entityType = $this->getPHPAttributes(EntityType::class);
+			$this->entityType = $this->getPHPAttributes(EntityType::class, $action->name) ?: $this->getPHPAttributes(EntityType::class);
 		}
 
 		return current(
@@ -199,31 +200,36 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		$result = [];
 		foreach ($this->getEntityColumns($viewGroup, includeIdentifier: true) as $column) {
 			$fieldAlias = $column->getAlias();
-			$value = null;
-			foreach (['get', 'has', 'is'] as $methodPrefix) {
-				$method = sprintf('%s%s', $methodPrefix, Container::camelize(Container::underscore($fieldAlias)));
-				if (method_exists($object, $method)) {
-					$value = $object->$method();
-					break;
-				}
-			}
 
-			if ($getter = $column->getGetter()) {
-				if (is_string($getter)) {
-					$getter = sprintf('get%s', (preg_replace('/^get/i', '', Container::camelize($getter))));
+			$value = $this->columnValueDetermination($object, $column);
 
-					if (method_exists($object, $getter)) {
-						$value = $object->$getter();
+			if(false === $value) {
+				$value = null;
+				foreach (['get', 'has', 'is'] as $methodPrefix) {
+					$method = sprintf('%s%s', $methodPrefix, Container::camelize(Container::underscore($fieldAlias)));
+					if (method_exists($object, $method)) {
+						$value = $object->$method();
+						break;
 					}
 				}
 
-				if (is_callable($getter) && $getter instanceof Closure) {
-					$value = $getter($value);
-				}
-			}
+				if ($getter = $column->getGetter()) {
+					if (is_string($getter)) {
+						$getter = sprintf('get%s', (preg_replace('/^get/i', '', Container::camelize($getter))));
 
-			if (null === $value && isset($additionalEntityFields[$fieldAlias])) {
-				$value = $additionalEntityFields[$fieldAlias];
+						if (method_exists($object, $getter)) {
+							$value = $object->$getter();
+						}
+					}
+
+					if (is_callable($getter) && $getter instanceof Closure) {
+						$value = $getter($value);
+					}
+				}
+
+				if (null === $value && isset($additionalEntityFields[$fieldAlias])) {
+					$value = $additionalEntityFields[$fieldAlias];
+				}
 			}
 
 			if ($value instanceof Collection) {
@@ -235,7 +241,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				};
 			}
 
-			if ($value instanceof DateTime) {
+			if ($value instanceof DateTimeInterface) {
 				$value = $value->format($column->getOption('dateFormat') ?: DateTimeInterface::ATOM);
 			}
 
@@ -263,6 +269,11 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 
 		return $result;
+	}
+
+	protected function columnValueDetermination(object $object, Column $column): false|null|string|int|float|BackedEnum
+	{
+		return false;
 	}
 
 	protected function prepareListData(Paginator $paginator, EntityColumnViewGroupEnum|string $viewGroup = null): array
@@ -427,7 +438,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	 * @throws Exception
 	 */
 	#[Route(path: '/{id}/view')]
-	#[Action(object: true)]
+	#[Action(visibility: ActionVisibilityEnum::Object)]
 	public function view(Request $request, int|string $id): ?Response
 	{
 		$action = $this->getPHPAttribute(Action::class, 'view');
@@ -444,7 +455,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		], defaultTemplate: 'view');
 	}
 
-	private function modify(Request $request, Action $action = null, mixed $id = null): ?Response
+	final protected function modify(Request $request, Action $action = null, mixed $id = null): ?Response
 	{
 		if(empty($action))
 			throw new Exception('This Action is not enabled in the list of Entity Actions.');
@@ -553,7 +564,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 		return $this->response($request, [
 			'title' => $action?->title ?: ($id ? 'Edit' : 'New'),
-			'object' => $this->compileEntityData($object),
+			...($id ? ['object' => $this->compileEntityData($object)] : []),
 			'form' => [
 				'modify' => [
 					'view' => $form->createView(),
@@ -570,14 +581,14 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	 * @throws Exception
 	 */
 	#[Route(path: '/{id}/edit')]
-	#[Action(object: true)]
+	#[Action(visibility: ActionVisibilityEnum::Object)]
 	public function edit(Request $request, mixed $id = null): ?Response
 	{
 		return $this->modify($request, $this->getAction('edit'), $id);
 	}
 
 	#[Route(path: '/{id}/delete', methods: ['DELETE', 'OPTIONS'])]
-	#[Action(object: true)]
+	#[Action(visibility: ActionVisibilityEnum::Object)]
 	public function delete(Request $request, int|string $id): Response
 	{
 		if ($request->isMethod(Request::METHOD_OPTIONS)) {
