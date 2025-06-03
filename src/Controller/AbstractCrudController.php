@@ -20,7 +20,6 @@ use Dakataa\Crud\Serializer\Normalizer\ColumnNormalizer;
 use Dakataa\Crud\Serializer\Normalizer\FormErrorNormalizer;
 use Dakataa\Crud\Serializer\Normalizer\FormViewNormalizer;
 use Dakataa\Crud\Serializer\Normalizer\RouteNormalizer;
-use Dakataa\Crud\Service\ActionCollection;
 use Dakataa\Crud\Twig\TemplateProvider;
 use Dakataa\Crud\Utils\Doctrine\Paginator;
 use Dakataa\Crud\Utils\StringHelper;
@@ -30,7 +29,6 @@ use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\Common\Collections\Order;
 use Doctrine\DBAL\Types\Types;
-use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Query\Expr\Join;
 use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\Mapping\ClassMetadata;
@@ -48,15 +46,12 @@ use ReflectionException;
 use ReflectionMethod;
 use Stringable;
 use Symfony\Component\DependencyInjection\Container;
-use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
-use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\ExpressionLanguage\ExpressionLanguage;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
 use Symfony\Component\Form\Extension\Core\Type\CollectionType;
 use Symfony\Component\Form\Extension\Core\Type\DateType;
 use Symfony\Component\Form\Extension\Core\Type\FormType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
-use Symfony\Component\Form\FormFactoryInterface;
 use Symfony\Component\Form\FormInterface;
 use Symfony\Component\Form\FormTypeInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -66,8 +61,6 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Attribute\Route;
-use Symfony\Component\Routing\RouterInterface;
-use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 use Symfony\Component\Serializer\Exception\ExceptionInterface;
 use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
 use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
@@ -75,8 +68,8 @@ use Symfony\Component\Serializer\Normalizer\AbstractNormalizer;
 use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
 use Symfony\Component\Serializer\Normalizer\DateTimeNormalizer;
 use Symfony\Component\Serializer\Serializer;
-use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\Validator\Constraints as Assert;
+use Symfony\Contracts\Service\Attribute\Required;
 use TypeError;
 
 
@@ -106,6 +99,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 	private array $reflectionCache = [];
 
+	protected CrudServiceContainer $serviceContainer;
+
 	protected function getPHPAttributes(string $attributeFQCN, string $method = null): array
 	{
 		$reflectionClass = $this->getReflectionClass($this->getControllerClass());
@@ -121,17 +116,10 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return current($this->getPHPAttributes($attributeClass, $method)) ?: null;
 	}
 
-	public function __construct(
-		protected FormFactoryInterface $formFactory,
-		protected RouterInterface $router,
-		protected EventDispatcherInterface $dispatcher,
-		protected EntityManagerInterface $entityManager,
-		protected ParameterBagInterface $parameterBag,
-		protected ActionCollection $actionCollection,
-		protected ?SerializerInterface $serializer = null,
-		protected ?AuthorizationCheckerInterface $authorizationChecker = null,
-		protected ?TemplateProvider $templateProvider = null
-	) {
+	#[Required]
+	public function setServiceContainer(CrudServiceContainer $loader): void {
+		$this->serviceContainer = $loader;
+
 		$this->entity = $this->getPHPAttribute(Entity::class);
 
 		if (empty($this->entity?->joins)) {
@@ -488,7 +476,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 				if ($this->getEntityClassMetadata()->hasAssociation($columnName)) {
 					$associationClassName = $this->getEntityClassMetadata()->getAssociationTargetClass($columnName);
-					if (null === $fieldValue = $this->entityManager->getRepository($associationClassName)->find($fieldValue)) {
+					if (null === $fieldValue = $this->serviceContainer->entityManager->getRepository($associationClassName)->find($fieldValue)) {
 						throw new Exception(
 							sprintf('Cannot found "%s" association with PK %s', $columnName, $fieldValue)
 						);
@@ -507,7 +495,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		], $this->getEntityType($action)?->getOptions() ?: []);
 
 		$this->onFormTypeBeforeCreate($request, $object);
-		$form = $this->formFactory->createNamed(
+		$form = $this->serviceContainer->formFactory->createNamed(
 			'form_'.Container::underscore($this->getEntityShortName()).'_'.(str_replace('-', '_', $id) ?: 'new'),
 			$this->getEntityType($action)?->getFqcn(),
 			$object,
@@ -521,8 +509,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			if ($form->isSubmitted() && $form->isValid()) {
 				$this->beforeFormSave($request, $form);
 
-				$this->entityManager->persist($form->getData());
-				$this->entityManager->flush();
+				$this->serviceContainer->entityManager->persist($form->getData());
+				$this->serviceContainer->entityManager->flush();
 
 				$this->afterFormSave($request, $form);
 
@@ -536,18 +524,18 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 				if ($action) {
 					if ($action->getRoute()) {
-						$route = $this->router->getRouteCollection()->get($action->getRoute()->getName());
+						$route = $this->serviceContainer->router->getRouteCollection()->get($action->getRoute()->getName());
 						$routeVariables = $route->compile()->getPathVariables();
 
 						$redirect = [
-							'route' => $this->router->getRouteCollection()->get($action->getRoute()->getName()),
+							'route' => $this->serviceContainer->router->getRouteCollection()->get($action->getRoute()->getName()),
 							'parameters' => [
 								'id' => $this->getEntityIdentifierValueFromObject($object),
 								...(array_intersect_key($request->attributes->all(), array_flip($routeVariables))),
 							],
 						];
 
-						$redirect['url'] = $this->router->generate(
+						$redirect['url'] = $this->serviceContainer->router->generate(
 							$action->getRoute()->getName(),
 							$redirect['parameters']
 						);
@@ -600,10 +588,10 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			$this->batchDelete($request, [$object]);
 		}
 
-		$route = $this->router->getRouteCollection()->get($this->getRoute('list')->getName());
+		$route = $this->serviceContainer->router->getRouteCollection()->get($this->getRoute('list')->getName());
 		$routeVariables = $route->compile()->getPathVariables();
 
-		return new RedirectResponse($this->router->generate($this->getRoute('list')->getName(), [
+		return new RedirectResponse($this->serviceContainer->router->generate($this->getRoute('list')->getName(), [
 			...array_intersect_key($request->attributes->all(), array_flip($routeVariables)),
 		]));
 	}
@@ -661,10 +649,10 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	{
 		if (count($objects)) {
 			foreach ($objects as $object) {
-				$this->entityManager->remove($object);
+				$this->serviceContainer->entityManager->remove($object);
 			}
 
-			$this->entityManager->flush();
+			$this->serviceContainer->entityManager->flush();
 			if ($request->hasSession()) {
 				$request->getSession()->getFlashBag()->add('notice', 'Items was deleted successfully!');
 			}
@@ -688,7 +676,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	): Response {
 		[, $template] = explode('::', $request->get('_controller'));
 
-		$format = $this->templateProvider ? $request->getPreferredFormat() : 'json';
+		$format = $this->serviceContainer->templateProvider ? $request->getPreferredFormat() : 'json';
 		switch ($format) {
 			case 'json':
 			{
@@ -699,7 +687,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 						new FormViewNormalizer,
 						new BackedEnumNormalizer,
 						new ColumnNormalizer,
-						new ActionNormalizer($this->router),
+						new ActionNormalizer($this->serviceContainer->router),
 						new DateTimeNormalizer([
 							DateTimeNormalizer::FORMAT_KEY => 'Y-m-d H:i:s',
 						]),
@@ -719,7 +707,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			}
 			default:
 				return new Response(
-					$this->templateProvider?->render($this, $template, $data, $defaultTemplate),
+					$this->serviceContainer->templateProvider?->render($this, $template, $data, $defaultTemplate),
 					$status
 				);
 		}
@@ -732,9 +720,10 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 
 		$form = $this
+			->serviceContainer
 			->formFactory
 			->createNamedBuilder('batch_'.Container::underscore($this->getEntityShortName()), options: [
-				...($this->parameterBag->get('form.type_extension.csrf.enabled') ? ['csrf_protection' => false] : []),
+				...($this->serviceContainer->parameterBag->get('form.type_extension.csrf.enabled') ? ['csrf_protection' => false] : []),
 			]);
 
 		$form->setMethod('POST');
@@ -812,12 +801,12 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 
 		if (empty($this->forms['filter'])) {
-			$form = $this->formFactory->createNamedBuilder(
+			$form = $this->serviceContainer->formFactory->createNamedBuilder(
 				'filter',
 				FormType::class,
 				null,
 				[
-					...($this->parameterBag->get(
+					...($this->serviceContainer->parameterBag->get(
 						'form.type_extension.csrf.enabled'
 					) ? ['csrf_protection' => false] : []),
 				]
@@ -967,7 +956,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		bool $searchable = false,
 		bool $includeIdentifier = false,
 	): Generator {
-		$rootEntityMetadata = $this->entityManager->getClassMetadata($this->getEntity()->getFqcn());
+		$rootEntityMetadata = $this->serviceContainer->entityManager->getClassMetadata($this->getEntity()->getFqcn());
 		$buildColumn = function (Column $column) use ($rootEntityMetadata): array|false {
 			$fieldName = $column->getField();
 			$entityMetadata = $rootEntityMetadata;
@@ -994,7 +983,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 						'alias' => lcfirst($entityAlias),
 					];
 
-					$entityMetadata = $this->entityManager->getClassMetadata($associationMapping['targetEntity']);
+					$entityMetadata = $this->serviceContainer->entityManager->getClassMetadata($associationMapping['targetEntity']);
 				}
 			} else {
 				if (
@@ -1343,7 +1332,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	public function getEntityClassMetadata(): ClassMetadata
 	{
 		if (!$this->entityClassMetadata) {
-			$this->entityClassMetadata = $this->entityManager->getClassMetadata($this->getEntity()->getFqcn());
+			$this->entityClassMetadata = $this->serviceContainer->entityManager->getClassMetadata($this->getEntity()->getFqcn());
 		}
 
 		return $this->entityClassMetadata;
@@ -1414,7 +1403,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 	protected function getEntityRepository(): ObjectRepository
 	{
-		return $this->entityManager->getRepository($this->getEntity()->getFqcn());
+		return $this->serviceContainer->entityManager->getRepository($this->getEntity()->getFqcn());
 	}
 
 	protected function getRoute(string $method = null): Route
@@ -1428,7 +1417,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 
 		$routeName = $this->getControllerClass().'::'.$method;
-		if (null === $route = $this->router->getRouteCollection()->get($routeName)) {
+		if (null === $route = $this->serviceContainer->router->getRouteCollection()->get($routeName)) {
 			throw new NotFoundHttpException(sprintf('Route "%s" does not exist', $routeName));
 		}
 
@@ -1440,7 +1429,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return array_filter(
 			$this->actions ?: $this->actions = array_filter(
 				iterator_to_array(
-					$this->actionCollection->load(
+					$this->serviceContainer->actionCollection->load(
 						$this->getControllerClass(),
 						$this->getEntity()->getFqcn()
 					)

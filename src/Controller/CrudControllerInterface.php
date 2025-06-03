@@ -11,4 +11,6 @@ interface CrudControllerInterface
 	public function getEntity(): Entity;
 
 	public function getEntityType(): ?EntityType;
+
+	public function setServiceContainer(CrudServiceContainer $loader): void;
 }
