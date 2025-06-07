@@ -495,8 +495,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		], $this->getEntityType($action)?->getOptions() ?: []);
 
 		$this->onFormTypeBeforeCreate($request, $object);
-		$form = $this->serviceContainer->formFactory->createNamed(
-			'form_'.Container::underscore($this->getEntityShortName()).'_'.(str_replace('-', '_', $id) ?: 'new'),
+		$form = $this->serviceContainer->formFactory->create(
 			$this->getEntityType($action)?->getFqcn(),
 			$object,
 			$formOptions
@@ -956,10 +955,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		bool $searchable = false,
 		bool $includeIdentifier = false,
 	): Generator {
-		$rootEntityMetadata = $this->serviceContainer->entityManager->getClassMetadata($this->getEntity()->getFqcn());
-		$buildColumn = function (Column $column) use ($rootEntityMetadata): array|false {
+		$buildColumn = function (Column $column): array|false {
 			$fieldName = $column->getField();
-			$entityMetadata = $rootEntityMetadata;
+			$entityMetadata = $this->getEntityClassMetadata();
 			$entityAlias = self::ENTITY_ROOT_ALIAS;
 			$relations = [];
 
@@ -1237,6 +1235,22 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 				$query
 					->addOrderBy($queryEntityField, $sortingFields[$column->getField()]);
+
+				unset($sortingFields[$column->getField()]);
+			}
+		}
+
+		// Add sort to non-searchable fields
+		foreach ($sortingFields as $field => $direction) {
+			if($this->getEntityClassMetadata()->hasField($field)) {
+				$queryEntityField = sprintf('%s.%s', self::ENTITY_ROOT_ALIAS, $field);
+				if ($this->getEntityClassMetadata()->isNullable($field)) {
+					// Move NULL values at the end
+					$query->addOrderBy(sprintf('CASE WHEN %s is null THEN 1 ELSE 0 END', $queryEntityField));
+				}
+
+				$query
+					->addOrderBy($queryEntityField, $direction);
 			}
 		}
 

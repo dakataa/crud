@@ -3,6 +3,7 @@
 namespace Dakataa\Crud\Serializer\Normalizer;
 
 use Doctrine\Common\Collections\ArrayCollection;
+use Symfony\Component\Form\ChoiceList\View\ChoiceGroupView;
 use Symfony\Component\Form\ChoiceList\View\ChoiceView;
 use Symfony\Component\Form\FormErrorIterator;
 use Symfony\Component\Form\FormView;
@@ -28,7 +29,16 @@ class FormViewNormalizer implements NormalizerInterface, NormalizerAwareInterfac
 		 */
 		['block_prefixes' => $blockPrefixes, 'errors' => $errors, 'data' => $data, 'choices' => $choices, 'multiple' => $multiple] = $object->vars + ['choices' => null, 'multiple' => false];
 
-		$data = ($choices ? array_values(array_map(fn(ChoiceView $c) => $c->value, array_filter($choices, fn(ChoiceView $c) => in_array($c->data, $data instanceof ArrayCollection ? $data->getValues() : (is_array($data) ? $data : [$data]), true)))) ?: null : $data);
+		$choices = array_values($choices ?: []) ?: null;
+		$rawChoices = array_reduce(
+			$choices ?: [],
+			fn(array $result, ChoiceView|ChoiceGroupView $c) => [
+				...$result,
+				...($c instanceof ChoiceView ? [$c] : [...$c->choices])
+			]
+		, []) ?: null;
+
+		$data = ($rawChoices ? array_values(array_map(fn(ChoiceView $c) => $c->value, array_filter($rawChoices, fn(ChoiceView $c) => in_array($c->data, $data instanceof ArrayCollection ? $data->getValues() : (is_array($data) ? $data : [$data]), true)))) ?: null : $data);
 		if(!$multiple && is_array($data)) {
 			$data = array_shift($data);
 		}
@@ -56,7 +66,6 @@ class FormViewNormalizer implements NormalizerInterface, NormalizerAwareInterfac
 					'required',
 					'priority',
 					'valid',
-					'choices',
 					'choice_attr',
 					'preferred_choices',
 					'placeholder',
@@ -77,6 +86,7 @@ class FormViewNormalizer implements NormalizerInterface, NormalizerAwareInterfac
 			...(isset($object->vars['prototype']) ? [
 				'prototype' => $this->normalizer->normalize($object->vars['prototype']),
 			] : []),
+			...($choices ? ['choices' =>  $choices] : []),
 		];
 	}
 
