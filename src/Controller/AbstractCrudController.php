@@ -167,6 +167,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	}
 
 	protected function compileEntityData(
+		Request $request,
 		array|object $object,
 		EntityColumnViewGroupEnum|string $viewGroup = null,
 		bool $raw = true
@@ -189,7 +190,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		foreach ($this->getEntityColumns($viewGroup, includeIdentifier: true) as $column) {
 			$fieldAlias = $column->getAlias();
 
-			$value = $this->columnValueDetermination($object, $column);
+			$value = $this->columnValueDetermination($request, $object, $column);
 
 			if(false === $value) {
 				$value = null;
@@ -259,17 +260,17 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return $result;
 	}
 
-	protected function columnValueDetermination(object $object, Column $column): false|null|string|int|float|BackedEnum
+	protected function columnValueDetermination(Request $request, object $object, Column $column): false|null|string|int|float|BackedEnum
 	{
 		return false;
 	}
 
-	protected function prepareListData(Paginator $paginator, EntityColumnViewGroupEnum|string $viewGroup = null): array
+	protected function prepareListData(Request $request, Paginator $paginator, EntityColumnViewGroupEnum|string $viewGroup = null): array
 	{
 		['items' => $items, 'meta' => $meta] = $paginator->paginate();
 
 		return [
-			'items' => array_map(fn(array|object $object) => $this->compileEntityData($object, $viewGroup), iterator_to_array($items)),
+			'items' => array_map(fn(array|object $object) => $this->compileEntityData($request, $object, $viewGroup), iterator_to_array($items)),
 			'meta' => $meta,
 		];
 	}
@@ -313,7 +314,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				'name' => $this->getEntityShortName(),
 				'primaryColumn' => $this->getEntityPrimaryColumn(),
 				'columns' => iterator_to_array($this->getEntityColumns()),
-				'data' => $this->prepareListData($paginator),
+				'data' => $this->prepareListData($request, $paginator),
 			],
 			'form' => [
 				...($filterForm ? [
@@ -381,7 +382,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		$rows = [$header];
 		//Rows
 		foreach ($objects as $object) {
-			$rows[] = $this->compileEntityData($object, EntityColumnViewGroupEnum::Export);
+			$rows[] = $this->compileEntityData($request, $object, EntityColumnViewGroupEnum::Export);
 		}
 
 		try {
@@ -438,7 +439,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return $this->response($request, [
 			'title' => $action?->title,
 			'object' => $object,
-			'data' => $this->compileEntityData($object),
+			'data' => $this->compileEntityData($request, $object),
 			'columns' => $this->getEntityColumns(EntityColumnViewGroupEnum::View),
 		], defaultTemplate: 'view');
 	}
@@ -487,7 +488,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			}
 		}
 
-		//Setup Form type options
+		// Setup Form type options
 		$formOptions = array_merge_recursive([
 			'action' => $request->getUri(),
 			'method' => Request::METHOD_POST,
@@ -551,7 +552,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 		return $this->response($request, [
 			'title' => $action?->title ?: ($id ? 'Edit' : 'New'),
-			...($id ? ['object' => $this->compileEntityData($object)] : []),
+			...($id ? ['object' => $this->compileEntityData($request, $object)] : []),
 			'form' => [
 				'modify' => [
 					'view' => $form->createView(),
