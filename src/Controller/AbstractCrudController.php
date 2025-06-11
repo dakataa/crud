@@ -464,14 +464,14 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 			/** @var PathParameterToFieldMap[] $mappedPathParameters */
 			$mappedPathParameters = $this->getPHPAttributes(PathParameterToFieldMap::class);
-			$fieldColumnMap = $this->getEntityColumnToFieldMapping();
 			foreach ($mappedPathParameters as $mappedPathParameter) {
 				$fieldName = $mappedPathParameter->getField();
-				if (!isset($fieldColumnMap[$fieldName])) {
+				$column = $this->buildColumn(new Column($fieldName));
+				if (!$column) {
 					throw new Exception(sprintf('Invalid field mapping for %s', $fieldName));
 				}
 
-				$columnName = $fieldColumnMap[$fieldName];
+				$columnName = $column['entityField'];
 				$fieldValue = $request->attributes->get($mappedPathParameter->getPathParameter());
 
 				if ($this->getEntityClassMetadata()->hasAssociation($columnName)) {
@@ -950,80 +950,80 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return $this;
 	}
 
+	private function buildColumn(Column $column): array|false {
+		$fieldName = $column->getField();
+		$entityMetadata = $this->getEntityClassMetadata();
+		$entityAlias = self::ENTITY_ROOT_ALIAS;
+		$relations = [];
+
+		if (str_contains($fieldName, '.')) {
+			$entityRelations = explode('.', $fieldName);
+			$fieldName = array_pop($entityRelations);
+
+			$entityAlias = null;
+			foreach ($entityRelations as $entityRelation) {
+				if (!$entityMetadata->hasAssociation($entityRelation)) {
+					return false;
+				}
+
+				$associationMapping = $entityMetadata->getAssociationMapping($entityRelation);
+
+				$rootAlias = $entityAlias;
+				$entityAlias = $entityAlias.Container::camelize($entityRelation);
+				$relations[] = [
+					'entity' => lcfirst($rootAlias ?: self::ENTITY_ROOT_ALIAS),
+					'field' => $entityRelation,
+					'alias' => lcfirst($entityAlias),
+				];
+
+				$entityMetadata = $this->serviceContainer->entityManager->getClassMetadata($associationMapping['targetEntity']);
+			}
+		} else {
+			if (
+				false === $entityMetadata->hasField($fieldName) &&
+				false === $entityMetadata->hasAssociation($fieldName) &&
+				(!$entityMetadata->isIdentifierComposite && $fieldName !== 'compositeId')
+			) {
+				return false;
+			}
+		}
+
+		if ($column->getSortable()) {
+			if (!$entityMetadata->hasField($fieldName)) {
+				$column->setSortable(false);
+			}
+		}
+
+		if ($column->getSearchable() !== false) {
+			if (false === $entityMetadata->hasField($fieldName) && false === ($column->getSearchable() instanceof SearchableOptions)) {
+				$column->setSearchable(false);
+			}
+		}
+
+		return [
+			'fqcn' => $entityMetadata->getReflectionClass()->name,
+			'entityAlias' => lcfirst($entityAlias),
+			'entityField' => $fieldName,
+			'relations' => $relations,
+			'type' => $entityMetadata->getTypeOfField($fieldName),
+			'nullable' => $entityMetadata->hasField($fieldName) ? $entityMetadata->isNullable($fieldName) : null,
+			'column' => $column,
+			'canSelect' => $entityMetadata->hasField($fieldName) && false === $entityMetadata->hasAssociation(
+					$fieldName
+				),
+		];
+	}
+
 	private function buildColumns(
 		EntityColumnViewGroupEnum|string $viewGroup = null,
 		bool $searchable = false,
 		bool $includeIdentifier = false,
 	): Generator {
-		$buildColumn = function (Column $column): array|false {
-			$fieldName = $column->getField();
-			$entityMetadata = $this->getEntityClassMetadata();
-			$entityAlias = self::ENTITY_ROOT_ALIAS;
-			$relations = [];
-
-			if (str_contains($fieldName, '.')) {
-				$entityRelations = explode('.', $fieldName);
-				$fieldName = array_pop($entityRelations);
-
-				$entityAlias = null;
-				foreach ($entityRelations as $entityRelation) {
-					if (!$entityMetadata->hasAssociation($entityRelation)) {
-						return false;
-					}
-
-					$associationMapping = $entityMetadata->getAssociationMapping($entityRelation);
-
-					$rootAlias = $entityAlias;
-					$entityAlias = $entityAlias.Container::camelize($entityRelation);
-					$relations[] = [
-						'entity' => lcfirst($rootAlias ?: self::ENTITY_ROOT_ALIAS),
-						'field' => $entityRelation,
-						'alias' => lcfirst($entityAlias),
-					];
-
-					$entityMetadata = $this->serviceContainer->entityManager->getClassMetadata($associationMapping['targetEntity']);
-				}
-			} else {
-				if (
-					false === $entityMetadata->hasField($fieldName) &&
-					false === $entityMetadata->hasAssociation($fieldName) &&
-					(!$entityMetadata->isIdentifierComposite && $fieldName !== 'compositeId')
-				) {
-					return false;
-				}
-			}
-
-			if ($column->getSortable()) {
-				if (!$entityMetadata->hasField($fieldName)) {
-					$column->setSortable(false);
-				}
-			}
-
-			if ($column->getSearchable() !== false) {
-				if (false === $entityMetadata->hasField($fieldName) && false === ($column->getSearchable() instanceof SearchableOptions)) {
-					$column->setSearchable(false);
-				}
-			}
-
-			return [
-				'fqcn' => $entityMetadata->getReflectionClass()->name,
-				'entityAlias' => lcfirst($entityAlias),
-				'entityField' => $fieldName,
-				'relations' => $relations,
-				'type' => $entityMetadata->getTypeOfField($fieldName),
-				'nullable' => $entityMetadata->hasField($fieldName) ? $entityMetadata->isNullable($fieldName) : null,
-				'column' => $column,
-				'canSelect' => $entityMetadata->hasField($fieldName) && false === $entityMetadata->hasAssociation(
-						$fieldName
-					),
-			];
-		};
-
 		foreach ($this->getEntityColumns($viewGroup, $searchable, $includeIdentifier) as $column) {
 			if ($searchable && (($searchableField = $column->getSearchable()) instanceof SearchableOptions)) {
 				$hasSearchableFieldForColumn = false;
 				// Add Search Column if different field passed
-				if ($searchableField->getField() && false !== $columnData = $buildColumn(
+				if ($searchableField->getField() && false !== $columnData = $this->buildColumn(
 						new Column(
 							$searchableField->getField(),
 							$column->getLabel(),
@@ -1035,7 +1035,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 					$hasSearchableFieldForColumn = true;
 				}
 
-				if (false !== $columnData = $buildColumn(
+				if (false !== $columnData = $this->buildColumn(
 						(clone $column)->setSearchable(
 							$hasSearchableFieldForColumn ? false : $column->getSearchable()
 						)->setSortable(false)
@@ -1043,7 +1043,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 					yield $columnData;
 				}
 			} else {
-				if (false !== $columnData = $buildColumn($column)) {
+				if (false !== $columnData = $this->buildColumn($column)) {
 					yield $columnData;
 				}
 			}
@@ -1101,20 +1101,19 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				);
 			}
 
-			if (!isset($columnFieldsMapping[$mappedPathAttribute->getField()])) {
+			$column = $this->buildColumn(new Column($mappedPathAttribute->getField()));
+			if (!$column) {
 				throw new Exception(sprintf('Missing column for field: %s', $mappedPathAttribute->getField()));
 			}
 
 			$pathParameter = $mappedPathAttribute->getPathParameter();
 			$pathParameterValue = $urlPathParameters[$pathParameter];
-			$queryParameterAlias = sprintf('pp%s', $mappedPathAttribute->getField());
-			$entityColumn = $columnFieldsMapping[$mappedPathAttribute->getField()];
-
+			$queryParameterAlias = sprintf('pp%s', Container::camelize($mappedPathAttribute->getField()));
 			$query->andWhere(
 				sprintf(
 					'%s.%s = :%s',
-					self::ENTITY_ROOT_ALIAS,
-					$entityColumn,
+					$column['entityAlias'],
+					$column['entityField'],
 					$queryParameterAlias
 				)
 			)->setParameter($queryParameterAlias, $pathParameterValue);
