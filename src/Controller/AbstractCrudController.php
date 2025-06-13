@@ -503,7 +503,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			'csrf_protection' => false,
 		], $this->getEntityType($action)?->getOptions() ?: []);
 
-		$this->onFormTypeBeforeCreate($request, $object);
+		$this->onFormTypeBeforeCreate($request, $object, $action);
 		$form = $this->serviceContainer->formFactory->create(
 			$this->getEntityType($action)?->getFqcn(),
 			$object,
@@ -514,6 +514,12 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		$responseStatus = 200;
 		if ($request->isMethod(Request::METHOD_POST)) {
 			$form->handleRequest($request);
+
+			// Allow to submit empty forms
+			if(false === $form->isSubmitted()) {
+				$form->submit([]);
+			}
+
 			if ($form->isSubmitted() && $form->isValid()) {
 				$this->beforeFormSave($request, $form);
 
@@ -1411,7 +1417,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	{
 	}
 
-	protected function onFormTypeBeforeCreate(Request $request, &$object)
+	protected function onFormTypeBeforeCreate(Request $request, $object, Action $action = null)
 	{
 	}
 
