@@ -460,6 +460,10 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			if (empty($object)) {
 				throw new NotFoundHttpException('Not Found');
 			}
+		} else if(false !== $object = $this->findEntityObjectByRequest($request, $action)) {
+			if(!is_a($object, $this->getEntity()->getFqcn(), true)) {
+				throw new NotFoundHttpException('Not Found');
+			}
 		} else {
 			$object = new ($this->getEntityClassMetadata()->getName());
 
@@ -470,6 +474,10 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				$column = $this->buildColumn(new Column($fieldName));
 				if (!$column) {
 					throw new Exception(sprintf('Invalid field mapping for %s', $fieldName));
+				}
+
+				if($this->getEntity()->getFqcn() !== $column['fqcn']) {
+					continue;
 				}
 
 				$columnName = $column['entityField'];
@@ -1413,6 +1421,11 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 	protected function afterFormSave(Request $request, FormInterface $form)
 	{
+	}
+
+	protected function findEntityObjectByRequest(Request $request, Action $action = null): false|object
+	{
+		return false;
 	}
 
 	protected function getEntityRepository(): ObjectRepository
