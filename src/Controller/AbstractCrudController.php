@@ -468,7 +468,11 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			$object = new ($this->getEntityClassMetadata()->getName());
 
 			/** @var PathParameterToFieldMap[] $mappedPathParameters */
-			$mappedPathParameters = $this->getPHPAttributes(PathParameterToFieldMap::class);
+			$mappedPathParameters = [
+				...$this->getPHPAttributes(PathParameterToFieldMap::class),
+				...$this->getPHPAttributes(PathParameterToFieldMap::class, $action->name)
+			];
+
 			foreach ($mappedPathParameters as $mappedPathParameter) {
 				$fieldName = $mappedPathParameter->getField();
 				$column = $this->buildColumn(new Column($fieldName));
@@ -481,7 +485,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				}
 
 				$columnName = $column['entityField'];
-				$fieldValue = $request->attributes->get($mappedPathParameter->getPathParameter());
+				$fieldValue = $request->get($mappedPathParameter->getPathParameter());
 
 				if ($this->getEntityClassMetadata()->hasAssociation($columnName)) {
 					$associationClassName = $this->getEntityClassMetadata()->getAssociationTargetClass($columnName);
