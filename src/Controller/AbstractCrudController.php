@@ -59,6 +59,7 @@ use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Symfony\Component\HttpKernel\Attribute\MapQueryParameter;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Serializer\Exception\ExceptionInterface;
@@ -418,9 +419,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	 */
 	#[Route(path: '/add')]
 	#[Action]
-	public function add(Request $request): ?Response
+	public function add(Request $request, #[MapQueryParameter] bool $save = null): ?Response
 	{
-		return $this->modify($request, $this->getAction('add'));
+		return $this->modify($request, $this->getAction('add'), save: $save ?: true);
 	}
 
 	/**
@@ -444,7 +445,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		], defaultTemplate: 'view');
 	}
 
-	final protected function modify(Request $request, Action $action = null, mixed $id = null): ?Response
+	final protected function modify(Request $request, Action $action = null, mixed $id = null, bool $save = true): ?Response
 	{
 		if(empty($action))
 			throw new Exception('This Action is not enabled in the list of Entity Actions.');
@@ -524,7 +525,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				$form->submit([]);
 			}
 
-			if ($form->isSubmitted() && $form->isValid()) {
+			if ($form->isSubmitted() && $form->isValid() && $save) {
 				$this->beforeFormSave($request, $form);
 
 				$this->serviceContainer->entityManager->persist($form->getData());
@@ -588,9 +589,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	 */
 	#[Route(path: '/{id}/edit')]
 	#[Action(visibility: ActionVisibilityEnum::Object)]
-	public function edit(Request $request, mixed $id = null): ?Response
+	public function edit(Request $request, mixed $id = null, #[MapQueryParameter] bool $save = null): ?Response
 	{
-		return $this->modify($request, $this->getAction('edit'), $id);
+		return $this->modify($request, $this->getAction('edit'), $id, $save ?: true);
 	}
 
 	#[Route(path: '/{id}/delete', methods: ['DELETE', 'OPTIONS'])]
