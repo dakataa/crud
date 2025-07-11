@@ -15,6 +15,46 @@ class FormViewNormalizer implements NormalizerInterface, NormalizerAwareInterfac
 {
 	use NormalizerAwareTrait;
 
+	const ORIGINAL_TYPES = [
+		'text',
+		'textarea',
+		'email',
+		'integer',
+		'money',
+		'number',
+		'password',
+		'percent',
+		'search',
+		'url',
+		'range',
+		'tel',
+		'color',
+		'choice',
+		'enum',
+		'entity',
+		'country',
+		'language',
+		'locale',
+		'timezone',
+		'currency',
+		'date',
+		'dateinterval',
+		'datetime',
+		'time',
+		'birthday',
+		'week',
+		'checkbox',
+		'file',
+		'radio',
+		'collection',
+		'repeated',
+		'hidden',
+		'button',
+		'reset',
+		'submit',
+		'form',
+	];
+
 	/**
 	 * @param FormView|null $object
 	 * @param string|null $format
@@ -27,23 +67,43 @@ class FormViewNormalizer implements NormalizerInterface, NormalizerAwareInterfac
 		/**
 		 * @var FormErrorIterator $errors
 		 */
-		['block_prefixes' => $blockPrefixes, 'errors' => $errors, 'data' => $data, 'choices' => $choices, 'multiple' => $multiple] = $object->vars + ['choices' => null, 'multiple' => false];
+		[
+			'block_prefixes' => $blockPrefixes,
+			'errors' => $errors,
+			'data' => $data,
+			'choices' => $choices,
+			'multiple' => $multiple,
+		] = $object->vars + ['choices' => null, 'multiple' => false];
 
 		$choices = array_values($choices ?: []) ?: null;
 		$rawChoices = array_reduce(
 			$choices ?: [],
 			fn(array $result, ChoiceView|ChoiceGroupView $c) => [
 				...$result,
-				...($c instanceof ChoiceView ? [$c] : [...$c->choices])
+				...($c instanceof ChoiceView ? [$c] : [...$c->choices]),
 			]
-		, []) ?: null;
+			, []
+		) ?: null;
 
-		$data = ($rawChoices ? array_values(array_map(fn(ChoiceView $c) => $c->value, array_filter($rawChoices, fn(ChoiceView $c) => in_array($c->data, $data instanceof ArrayCollection ? $data->getValues() : (is_array($data) ? $data : [$data]), true)))) ?: null : $data);
-		if(!$multiple && is_array($data)) {
+		$data = ($rawChoices ? array_values(
+			array_map(fn(ChoiceView $c) => $c->value,
+				array_filter(
+					$rawChoices,
+					fn(ChoiceView $c) => in_array(
+						$c->data,
+						$data instanceof ArrayCollection ? $data->getValues() : (is_array($data) ? $data : [$data]),
+						true
+					)
+				))
+		) ?: null : $data);
+		if (!$multiple && is_array($data)) {
 			$data = array_shift($data);
 		}
 
-		$type = array_slice($blockPrefixes, -2, 1)[0] ?? 'form';
+		$type = array_reduce(
+			array_reverse($blockPrefixes),
+			fn(?string $result, string $type) => $result ?: (in_array($type, static::ORIGINAL_TYPES) ? $type : null)
+		) ?: 'form';
 
 		return [
 			'type' => $type,
@@ -78,7 +138,8 @@ class FormViewNormalizer implements NormalizerInterface, NormalizerAwareInterfac
 					'multiple',
 					'allow_add',
 					'allow_delete',
-					'prototype_name'
+					'prototype_name',
+					'block_prefixes',
 				])
 			),
 			'data' => $data,
@@ -86,7 +147,7 @@ class FormViewNormalizer implements NormalizerInterface, NormalizerAwareInterfac
 			...(isset($object->vars['prototype']) ? [
 				'prototype' => $this->normalizer->normalize($object->vars['prototype']),
 			] : []),
-			...($choices ? ['choices' =>  $choices] : []),
+			...($choices ? ['choices' => $choices] : []),
 		];
 	}
 

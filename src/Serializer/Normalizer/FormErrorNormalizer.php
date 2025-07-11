@@ -16,6 +16,7 @@ class FormErrorNormalizer implements NormalizerInterface
 	public function normalize(mixed $data, ?string $format = null, array $context = []): array
 	{
 		return [
+			'origin' => $data->getOrigin()->getName(),
 			'message' => $data->getMessage(),
 			'messageTemplate' => $data->getMessageTemplate(),
 			'messageParameters' => $data->getMessageParameters()
