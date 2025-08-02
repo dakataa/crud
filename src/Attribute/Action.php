@@ -6,7 +6,7 @@ use Attribute;
 use Dakataa\Crud\Attribute\Enum\ActionVisibilityEnum;
 use Symfony\Component\Routing\Attribute\Route;
 
-#[Attribute(Attribute::TARGET_METHOD | Attribute::TARGET_CLASS)]
+#[Attribute(Attribute::TARGET_METHOD | Attribute::TARGET_CLASS | Attribute::IS_REPEATABLE)]
 class Action
 {
 	private ?string $method = null;

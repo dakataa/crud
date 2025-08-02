@@ -520,7 +520,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		if ($request->isMethod(Request::METHOD_POST)) {
 			$form->handleRequest($request);
 
-			// Allow to submit empty forms
+			// Allow submitting empty forms
 			if(false === $form->isSubmitted()) {
 				$form->submit([]);
 			}

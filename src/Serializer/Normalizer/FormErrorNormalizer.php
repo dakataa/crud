@@ -15,8 +15,16 @@ class FormErrorNormalizer implements NormalizerInterface
 	 */
 	public function normalize(mixed $data, ?string $format = null, array $context = []): array
 	{
+		$names = [$data->getOrigin()->getName()];
+		$parent = $data->getOrigin()->getParent();
+		while($parent) {
+			$names[] = $parent->getName();
+			$parent = $parent->getParent();
+		}
+		$names = array_reverse($names);
+		$origin = array_shift($names) . implode('', array_map(fn($n) => '[' . $n . ']', $names));
 		return [
-			'origin' => $data->getOrigin()->getName(),
+			'origin' => $origin,
 			'message' => $data->getMessage(),
 			'messageTemplate' => $data->getMessageTemplate(),
 			'messageParameters' => $data->getMessageParameters()
