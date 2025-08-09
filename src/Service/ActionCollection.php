@@ -74,9 +74,9 @@ class ActionCollection
 			return true;
 		};
 
-		if (!$isAccessGranted($controllerReflectionClass)) {
-			return;
-		}
+//		if (!$isAccessGranted($controllerReflectionClass)) {
+//			return;
+//		}
 
 		$controllerReplacementActions = array_map(fn(ReflectionAttribute $attribute) => $attribute->newInstance(), $controllerReflectionClass->getAttributes(Action::class));
 
@@ -94,9 +94,9 @@ class ActionCollection
 				continue;
 			}
 
-			if (!$isAccessGranted($reflectionMethod)) {
-				continue;
-			}
+//			if (!$isAccessGranted($reflectionMethod)) {
+//				continue;
+//			}
 
 			$entity = lcfirst((new ReflectionClass($methodEntityFQCN))->getShortName());
 
@@ -119,6 +119,10 @@ class ActionCollection
 						fn(Action $action) => $action->getName() === $name
 					)
 				)[0] ?? $actionInstance;
+
+//				if($actionInstance->permission && false === $this->authorizationChecker->isGranted($actionInstance->permission)) {
+//					continue;
+//				}
 
 				$title = ($actionInstance->title ?: StringHelper::titlize(ucfirst($name ?: $reflectionMethod->name)));
 

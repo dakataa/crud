@@ -15,6 +15,7 @@ use Dakataa\Crud\Attribute\Enum\ActionVisibilityEnum;
 use Dakataa\Crud\Attribute\Enum\EntityColumnViewGroupEnum;
 use Dakataa\Crud\Attribute\PathParameterToFieldMap;
 use Dakataa\Crud\Attribute\SearchableOptions;
+use Dakataa\Crud\Security\SecuritySubject;
 use Dakataa\Crud\Serializer\Normalizer\ActionNormalizer;
 use Dakataa\Crud\Serializer\Normalizer\ColumnNormalizer;
 use Dakataa\Crud\Serializer\Normalizer\FormErrorNormalizer;
@@ -62,6 +63,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\HttpKernel\Attribute\MapQueryParameter;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 use Symfony\Component\Serializer\Exception\ExceptionInterface;
 use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
 use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
@@ -270,9 +272,35 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	{
 		['items' => $items, 'meta' => $meta] = $paginator->paginate();
 
+		$items = iterator_to_array($items);
+		$primaryKeyColumn = $this->getEntityPrimaryColumn();
+
 		return [
-			'items' => array_map(fn(array|object $object) => $this->compileEntityData($request, $object, $viewGroup), iterator_to_array($items)),
+			'items' => array_map(
+				fn(array|object $object) => $this->compileEntityData($request, $object, $viewGroup),
+				$items
+			),
 			'meta' => $meta,
+			'acl' =>
+				array_reduce(
+					array_filter(
+						$this->getActions(),
+						fn(Action $action) => $action->getVisibility() === ActionVisibilityEnum::Object
+					),
+					function (array $result, Action $action) use ($items, $primaryKeyColumn) {
+						return array_filter([
+							...$result,
+							$action->name => array_values(array_filter(array_map(
+								fn($object) => !$action->permission || true === $this->serviceContainer->authorizationChecker->isGranted(
+									$action->permission,
+									new SecuritySubject($this->getEntity(), $object[0])
+								) ? $object[$primaryKeyColumn->getField()] : null,
+								$items
+							))),
+						]);
+					},
+					[]
+				)
 		];
 	}
 
@@ -286,8 +314,13 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	public function list(Request $request): Response
 	{
 		$action = $this->getAction('list');
-		if(empty($action))
+		if(empty($action)) {
 			throw new Exception('This Action "list" is not enabled in the list of Entity Actions.');
+		}
+
+		if($action->permission && false === $this->serviceContainer->authorizationChecker->isGranted($action->permission, new SecuritySubject($this->getEntity()))) {
+			throw new AccessDeniedException();
+		}
 
 //		['pagination' => $pagination] = (new OptionsResolver)
 //			->setDefined(['filter'])
@@ -310,7 +343,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		);
 
 		return $this->response($request, [
-			'title' => $action?->title ?: StringHelper::titlize($this->getEntityShortName()),
+			'title' => $action->title ?: StringHelper::titlize($this->getEntityShortName()),
 			'entity' => [
 				'name' => $this->getEntityShortName(),
 				'primaryColumn' => $this->getEntityPrimaryColumn(),
@@ -501,6 +534,10 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			}
 		}
 
+		if($action->permission && false === $this->serviceContainer->authorizationChecker->isGranted($action->permission, new SecuritySubject($this->getEntity(), $object))) {
+			throw new AccessDeniedException();
+		}
+
 		// Setup Form type options
 		$formOptions = array_merge_recursive([
 			'action' => $request->getUri(),
@@ -602,8 +639,14 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			return new Response;
 		}
 
+		$action = $this->getAction('delete');
 		$object = $this->getEntityRepository()->find($this->getEntityIdentifierPrepare($id));
+
 		if ($object) {
+			if($action?->permission && false === $this->serviceContainer->authorizationChecker->isGranted($action->permission, new SecuritySubject($this->getEntity(), $object))) {
+				throw new AccessDeniedException();
+			}
+
 			$this->batchDelete($request, [$object]);
 		}
 

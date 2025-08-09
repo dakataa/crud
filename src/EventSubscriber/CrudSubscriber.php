@@ -104,7 +104,7 @@ class CrudSubscriber
 				return $this->originClassName;
 			}
 
-			protected function getPHPAttributes(string $attributeFQCN, string $method = null): array
+			protected function getPHPAttributes(string $attributeFQCN, string|null $method = null): array
 			{
 				return $this->crudSubscriber->getPHPAttributes($this->controllerEvent, $attributeFQCN);
 			}
