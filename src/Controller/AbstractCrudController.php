@@ -284,7 +284,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			'acl' =>
 				array_reduce(
 					array_filter(
-						$this->getActions(),
+						$this->getActions($request),
 						fn(Action $action) => $action->getVisibility() === ActionVisibilityEnum::Object
 					),
 					function (array $result, Action $action) use ($items, $primaryKeyColumn) {
@@ -300,7 +300,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 						]);
 					},
 					[]
-				)
+				),
 		];
 	}
 
@@ -313,12 +313,12 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	]
 	public function list(Request $request): Response
 	{
-		$action = $this->getAction('list');
+		$action = $this->getAction($request, 'list');
 		if(empty($action)) {
 			throw new Exception('This Action "list" is not enabled in the list of Entity Actions.');
 		}
 
-		if($action->permission && false === $this->serviceContainer->authorizationChecker->isGranted($action->permission, new SecuritySubject($this->getEntity()))) {
+		if(!$this->isActionAccessGranted($request, $action)) {
 			throw new AccessDeniedException();
 		}
 
@@ -363,7 +363,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				] : []),
 			],
 			'sort' => $sorting,
-			'action' => $this->getActions(),
+			'action' => $this->getActions($request, true),
 		], defaultTemplate: 'list');
 	}
 
@@ -454,7 +454,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	#[Action]
 	public function add(Request $request, #[MapQueryParameter] bool $save = null): ?Response
 	{
-		return $this->modify($request, $this->getAction('add'), save: $save ?: true);
+		return $this->modify($request, $this->getAction($request, 'add'), save: $save ?: true);
 	}
 
 	/**
@@ -472,10 +472,44 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 		return $this->response($request, [
 			'title' => $action?->title,
-			'object' => $object,
 			'data' => $this->compileEntityData($request, $object),
 			'columns' => $this->getEntityColumns(EntityColumnViewGroupEnum::View),
 		], defaultTemplate: 'view');
+	}
+
+	final protected function getMappedFields(Request $request, Action $action): Generator
+	{
+		/** @var PathParameterToFieldMap[] $mappedPathParameters */
+		$mappedPathParameters = [
+			...$this->getPHPAttributes(PathParameterToFieldMap::class),
+			...$this->getPHPAttributes(PathParameterToFieldMap::class, $action->name),
+		];
+
+		foreach ($mappedPathParameters as $mappedPathParameter) {
+			$fieldName = $mappedPathParameter->getField();
+			$column = $this->buildColumn(new Column($fieldName));
+			if (!$column) {
+				throw new Exception(sprintf('Invalid field mapping for %s', $fieldName));
+			}
+
+			if($this->getEntity()->getFqcn() !== $column['fqcn']) {
+				continue;
+			}
+
+			$columnName = $column['entityField'];
+			$fieldValue = $request->get($mappedPathParameter->getPathParameter());
+
+			if ($this->getEntityClassMetadata()->hasAssociation($columnName)) {
+				$associationClassName = $this->getEntityClassMetadata()->getAssociationTargetClass($columnName);
+				if (null === $fieldValue = $this->serviceContainer->entityManager->getRepository($associationClassName)->find($fieldValue)) {
+					throw new Exception(
+						sprintf('Cannot found "%s" association with PK %s', $columnName, $fieldValue)
+					);
+				}
+			}
+
+			yield $columnName => $fieldValue;
+		}
 	}
 
 	final protected function modify(Request $request, Action $action = null, mixed $id = null, bool $save = true): ?Response
@@ -500,41 +534,12 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			}
 		} else {
 			$object = new ($this->getEntityClassMetadata()->getName());
-
-			/** @var PathParameterToFieldMap[] $mappedPathParameters */
-			$mappedPathParameters = [
-				...$this->getPHPAttributes(PathParameterToFieldMap::class),
-				...$this->getPHPAttributes(PathParameterToFieldMap::class, $action->name)
-			];
-
-			foreach ($mappedPathParameters as $mappedPathParameter) {
-				$fieldName = $mappedPathParameter->getField();
-				$column = $this->buildColumn(new Column($fieldName));
-				if (!$column) {
-					throw new Exception(sprintf('Invalid field mapping for %s', $fieldName));
-				}
-
-				if($this->getEntity()->getFqcn() !== $column['fqcn']) {
-					continue;
-				}
-
-				$columnName = $column['entityField'];
-				$fieldValue = $request->get($mappedPathParameter->getPathParameter());
-
-				if ($this->getEntityClassMetadata()->hasAssociation($columnName)) {
-					$associationClassName = $this->getEntityClassMetadata()->getAssociationTargetClass($columnName);
-					if (null === $fieldValue = $this->serviceContainer->entityManager->getRepository($associationClassName)->find($fieldValue)) {
-						throw new Exception(
-							sprintf('Cannot found "%s" association with PK %s', $columnName, $fieldValue)
-						);
-					}
-				}
-
+			foreach ($this->getMappedFields($request, $action) as $columnName => $fieldValue) {
 				$this->getEntityClassMetadata()->setFieldValue($object, $columnName, $fieldValue);
 			}
 		}
 
-		if($action->permission && false === $this->serviceContainer->authorizationChecker->isGranted($action->permission, new SecuritySubject($this->getEntity(), $object))) {
+		if(!$this->isActionAccessGranted($request, $action, $object)) {
 			throw new AccessDeniedException();
 		}
 
@@ -576,7 +581,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 					],
 				];
 
-				$action = $this->getAction('edit') ?: $this->getAction('list');
+				$action = $this->getAction($request, 'edit') ?: $this->getAction($request, 'list');
 
 				if ($action) {
 					if ($action->getRoute()) {
@@ -628,7 +633,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	#[Action(visibility: ActionVisibilityEnum::Object)]
 	public function edit(Request $request, mixed $id = null, #[MapQueryParameter] bool $save = null): ?Response
 	{
-		return $this->modify($request, $this->getAction('edit'), $id, $save ?: true);
+		return $this->modify($request, $this->getAction($request, 'edit'), $id, $save ?: true);
 	}
 
 	#[Route(path: '/{id}/delete', methods: ['DELETE', 'OPTIONS'])]
@@ -639,7 +644,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			return new Response;
 		}
 
-		$action = $this->getAction('delete');
+		$action = $this->getAction($request,'delete');
 		$object = $this->getEntityRepository()->find($this->getEntityIdentifierPrepare($id));
 
 		if ($object) {
@@ -1505,7 +1510,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return new Route($route->getPath(), $routeName, $route->getMethods());
 	}
 
-	public function getActions(): array
+	public function getActions(Request $request, bool $onlyVisible = false): array
 	{
 		return array_filter(
 			$this->actions ?: $this->actions = array_filter(
@@ -1517,26 +1522,32 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				),
 				fn(Action $action) => null === $this->getEntity()->getActions() || in_array($action->getName(), $this->getEntity()->getActions())
 			),
-			[$this, 'isActionVisible']
+			fn(Action $action) => !$onlyVisible || ($this->isActionVisible($request, $action) && $this->isActionAccessGranted($request, $action))
 		);
 	}
 
-	public function getAction(string $name): ?Action
+	public function getAction(Request $request, string $name): ?Action
 	{
 		return current(
-			array_values(array_filter($this->getActions(), fn(Action $action) => $action->getName() === $name))
+			array_values(array_filter($this->getActions($request), fn(Action $action) => $action->getName() === $name))
 		) ?: null;
 	}
 
 	/**
 	 * Helper method to determine action visibility
 	 *
+	 * @param Request $request
 	 * @param Action $action
 	 * @return bool
 	 */
-	public function isActionVisible(Action $action): bool
+	public function isActionVisible(Request $request, Action $action): bool
 	{
 		return true;
+	}
+
+	public function isActionAccessGranted(Request $request, Action $action, object|null $object = null): bool
+	{
+		return !$action->permission || $this->serviceContainer->authorizationChecker->isGranted($action->permission, new SecuritySubject($this->getEntity(), $object));
 	}
 
 	protected function getExpressionLanguage(): ExpressionLanguage
