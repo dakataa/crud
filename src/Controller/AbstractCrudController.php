@@ -268,40 +268,27 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return false;
 	}
 
-	protected function prepareListData(Request $request, Paginator $paginator, EntityColumnViewGroupEnum|string $viewGroup = null): array
+	protected function getACLs(Request $request, array $items)
 	{
-		['items' => $items, 'meta' => $meta] = $paginator->paginate();
-
-		$items = iterator_to_array($items);
-		$primaryKeyColumn = $this->getEntityPrimaryColumn();
-
-		return [
-			'items' => array_map(
-				fn(array|object $object) => $this->compileEntityData($request, $object, $viewGroup),
-				$items
+		return array_reduce(
+			array_filter(
+				$this->getActions($request),
+				fn(Action $action) => $action->getVisibility() === ActionVisibilityEnum::Object
 			),
-			'meta' => $meta,
-			'acl' =>
-				array_reduce(
-					array_filter(
-						$this->getActions($request),
-						fn(Action $action) => $action->getVisibility() === ActionVisibilityEnum::Object
-					),
-					function (array $result, Action $action) use ($items, $primaryKeyColumn) {
-						return array_filter([
-							...$result,
-							$action->name => array_values(array_filter(array_map(
-								fn($object) => !$action->permission || true === $this->serviceContainer->authorizationChecker->isGranted(
-									$action->permission,
-									new SecuritySubject($this->getEntity(), $object[0])
-								) ? $object[$primaryKeyColumn->getField()] : null,
-								$items
-							))),
-						]);
-					},
-					[]
-				),
-		];
+			function (array $result, Action $action) use ($items) {
+				return array_filter([
+					...$result,
+					$action->name => array_values(array_filter(array_map(
+						fn($object) => !$action->permission || true === $this->serviceContainer->authorizationChecker->isGranted(
+							$action->permission,
+							new SecuritySubject($this->getEntity(), $object)
+						) ? $this->getEntityIdentifierValueFromObject($object) : null,
+						$items
+					))),
+				]);
+			},
+			[]
+		);
 	}
 
 	/**
@@ -342,13 +329,23 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			$this->getEntity()->isPagination() && (count($this->getEntityClassMetadata()->getIdentifierFieldNames()) === 1) ? $this->prepareMaxResults($request) : null
 		);
 
+		['items' => $items, 'meta' => $meta] = $paginator->paginate();
+		$items = iterator_to_array($items);
+
 		return $this->response($request, [
 			'title' => $action->title ?: StringHelper::titlize($this->getEntityShortName()),
 			'entity' => [
 				'name' => $this->getEntityShortName(),
 				'primaryColumn' => $this->getEntityPrimaryColumn(),
 				'columns' => iterator_to_array($this->getEntityColumns()),
-				'data' => $this->prepareListData($request, $paginator),
+				'data' => [
+					'items' => array_map(
+						fn(array|object $object) => $this->compileEntityData($request, $object),
+						$items
+					),
+					'meta' => $meta
+				],
+				'acl' => $this->getACLs($request, array_map(fn(array $item) => $item[0], $items)),
 			],
 			'form' => [
 				...($filterForm ? [
@@ -471,9 +468,14 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 
 		return $this->response($request, [
+			'entity' => [
+				'name' => $this->getEntityShortName(),
+				'primaryColumn' => $this->getEntityPrimaryColumn(),
+				'columns' => iterator_to_array($this->getEntityColumns()),
+				'data' => $this->compileEntityData($request, $object),
+				'acl' => $this->getACLs($request, [$object]),
+			],
 			'title' => $action?->title,
-			'data' => $this->compileEntityData($request, $object),
-			'columns' => $this->getEntityColumns(EntityColumnViewGroupEnum::View),
 		], defaultTemplate: 'view');
 	}
 
@@ -1162,6 +1164,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			$request->attributes->all(),
 			array_flip(array_filter($request->attributes->keys(), fn(string $key) => !str_starts_with($key, '_')))
 		);
+
 		foreach ($mappedPathParameters as $mappedPathAttribute) {
 			if (!isset($urlPathParameters[$mappedPathAttribute->getPathParameter()])) {
 				throw new Exception(
