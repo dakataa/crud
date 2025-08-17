@@ -39,7 +39,8 @@ class ActionNormalizer implements NormalizerInterface, NormalizerAwareInterface
 			'name' => $object->getName(),
 			'title' => $object->getTitle(),
 			'visibility' => $object->getVisibility(),
-			'route' => $this->normalizer->normalize($route)
+			'route' => $this->normalizer->normalize($route),
+			'permission' => $object->getPermission(),
 		];
 	}
 

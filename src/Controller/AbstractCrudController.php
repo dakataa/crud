@@ -373,7 +373,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		Request $request,
 		string $type = self::EXPORT_EXCEL
 	): StreamedResponse {
-		$action = $this->getPHPAttribute(Action::class, 'export');
+		$action = $this->getAction($request, 'export');
 		$exportTypes = [
 			self::EXPORT_EXCEL => ['ext' => 'xlsx', 'writer' => Xlsx::class],
 			self::EXPORT_EXCEL2007 => ['ext' => 'xls', 'writer' => Xls::class],
@@ -459,10 +459,14 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	#[Action(visibility: ActionVisibilityEnum::Object)]
 	public function view(Request $request, int|string $id): ?Response
 	{
-		$action = $this->getPHPAttribute(Action::class, 'view');
+		$action = $this->getAction($request, 'view');
 		$object = $this->getEntityRepository()->find($this->getEntityIdentifierPrepare($id));
 		if (empty($object)) {
 			throw new NotFoundHttpException('Not Found');
+		}
+
+		if(!$this->isActionAccessGranted($request, $action, $object)) {
+			throw new AccessDeniedException();
 		}
 
 		return $this->response($request, [
