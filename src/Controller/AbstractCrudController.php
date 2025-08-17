@@ -270,17 +270,15 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 	protected function getACLs(Request $request, array $items)
 	{
+		$permissions = array_unique(array_filter(array_map(fn(Action $action) => $action->permission,  $this->getActions($request))));
 		return array_reduce(
-			array_filter(
-				$this->getActions($request),
-				fn(Action $action) => $action->getVisibility() === ActionVisibilityEnum::Object
-			),
-			function (array $result, Action $action) use ($items) {
+			$permissions,
+			function (array $result, string $permission) use ($items) {
 				return array_filter([
 					...$result,
-					$action->name => array_values(array_filter(array_map(
-						fn($object) => !$action->permission || true === $this->serviceContainer->authorizationChecker->isGranted(
-							$action->permission,
+					$permission => array_values(array_filter(array_map(
+						fn($object) => true === $this->serviceContainer->authorizationChecker->isGranted(
+							$permission,
 							new SecuritySubject($this->getEntity(), $object)
 						) ? $this->getEntityIdentifierValueFromObject($object) : null,
 						$items
@@ -501,7 +499,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			$columnName = $column['entityField'];
 			$fieldValue = $request->get($mappedPathParameter->getPathParameter());
 
-			if ($this->getEntityClassMetadata()->hasAssociation($columnName)) {
+			if ($fieldValue && $this->getEntityClassMetadata()->hasAssociation($columnName)) {
 				$associationClassName = $this->getEntityClassMetadata()->getAssociationTargetClass($columnName);
 				if (null === $fieldValue = $this->serviceContainer->entityManager->getRepository($associationClassName)->find($fieldValue)) {
 					throw new Exception(
