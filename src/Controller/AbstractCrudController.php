@@ -4,6 +4,7 @@ namespace Dakataa\Crud\Controller;
 
 use BackedEnum;
 use Closure;
+use Dakataa\Crud\Attribute\ACL;
 use Dakataa\Crud\Attribute\Action;
 use Dakataa\Crud\Attribute\Column;
 use Dakataa\Crud\Attribute\Entity;
@@ -270,7 +271,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 	protected function getACLs(Request $request, array $items)
 	{
-		$permissions = array_unique(array_filter(array_map(fn(Action $action) => $action->permission,  $this->getActions($request))));
+		$aclAttribute = $this->getPHPAttribute(ACL::class);
+		$permissions = array_merge(array_unique(array_filter(array_map(fn(Action $action) => $action->permission,  $this->getActions($request)))), $aclAttribute->permissions ?? []);
+
 		return array_reduce(
 			$permissions,
 			function (array $result, string $permission) use ($items) {
