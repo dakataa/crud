@@ -15,6 +15,7 @@ use Dakataa\Crud\Attribute\EntityType;
 use Dakataa\Crud\Attribute\Enum\ActionVisibilityEnum;
 use Dakataa\Crud\Attribute\Enum\EntityColumnViewGroupEnum;
 use Dakataa\Crud\Attribute\PathParameterToFieldMap;
+use Dakataa\Crud\Attribute\QueryParameterToFieldMap;
 use Dakataa\Crud\Attribute\SearchableOptions;
 use Dakataa\Crud\Security\SecuritySubject;
 use Dakataa\Crud\Serializer\Normalizer\ActionNormalizer;
@@ -486,13 +487,15 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 	final protected function getMappedFields(Request $request, Action $action): Generator
 	{
-		/** @var PathParameterToFieldMap[] $mappedPathParameters */
-		$mappedPathParameters = [
+		/** @var PathParameterToFieldMap[] $mappedParameters */
+		$mappedParameters = [
+			...$this->getPHPAttributes(QueryParameterToFieldMap::class),
+			...$this->getPHPAttributes(QueryParameterToFieldMap::class, $action->name),
 			...$this->getPHPAttributes(PathParameterToFieldMap::class),
 			...$this->getPHPAttributes(PathParameterToFieldMap::class, $action->name),
 		];
 
-		foreach ($mappedPathParameters as $mappedPathParameter) {
+		foreach ($mappedParameters as $mappedPathParameter) {
 			$fieldName = $mappedPathParameter->getField();
 			$column = $this->buildColumn(new Column($fieldName));
 			if (!$column) {
@@ -504,7 +507,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			}
 
 			$columnName = $column['entityField'];
-			$fieldValue = $request->get($mappedPathParameter->getPathParameter());
+			$fieldValue = $request->get($mappedPathParameter->getParameter());
 
 			if ($fieldValue && $this->getEntityClassMetadata()->hasAssociation($columnName)) {
 				$associationClassName = $this->getEntityClassMetadata()->getAssociationTargetClass($columnName);
@@ -1165,15 +1168,19 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 		/** @var PathParameterToFieldMap[] $mappedPathParameters */
 		$mappedPathParameters = $this->getPHPAttributes(PathParameterToFieldMap::class);
-		$urlPathParameters = array_intersect_key(
-			$request->attributes->all(),
-			array_flip(array_filter($request->attributes->keys(), fn(string $key) => !str_starts_with($key, '_')))
+
+		/** @var QueryParameterToFieldMap[] $mappedQueryParameters */
+		$mappedQueryParameters = $this->getPHPAttributes(QueryParameterToFieldMap::class);
+
+		$allParameters = array_intersect_key(
+			array_merge($request->query->all(), $request->attributes->all()),
+			array_flip(array_filter(array_merge($request->query->keys(), $request->attributes->keys()), fn(string $key) => !str_starts_with($key, '_')))
 		);
 
-		foreach ($mappedPathParameters as $mappedPathAttribute) {
-			if (!isset($urlPathParameters[$mappedPathAttribute->getPathParameter()])) {
+		foreach (array_merge($mappedQueryParameters, $mappedPathParameters) as $mappedPathAttribute) {
+			if (!isset($allParameters[$mappedPathAttribute->getParameter()])) {
 				throw new Exception(
-					sprintf('Missing mapped path attribute: %s', $mappedPathAttribute->getPathParameter())
+					sprintf('Missing mapped attribute: %s', $mappedPathAttribute->getParameter())
 				);
 			}
 
@@ -1182,8 +1189,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				throw new Exception(sprintf('Missing column for field: %s', $mappedPathAttribute->getField()));
 			}
 
-			$pathParameter = $mappedPathAttribute->getPathParameter();
-			$pathParameterValue = $urlPathParameters[$pathParameter];
+			$pathParameter = $mappedPathAttribute->getParameter();
+			$pathParameterValue = $allParameters[$pathParameter];
 			$queryParameterAlias = sprintf('pp%s', Container::camelize($mappedPathAttribute->getField()));
 			$query->andWhere(
 				sprintf(
