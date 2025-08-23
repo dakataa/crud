@@ -265,7 +265,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return $result;
 	}
 
-	protected function columnValueDetermination(Request $request, object $object, Column $column): false|null|string|int|float|BackedEnum
+	protected function columnValueDetermination(Request $request, object $object, Column $column): false|null|string|int|float|BackedEnum|Collection
 	{
 		return false;
 	}
