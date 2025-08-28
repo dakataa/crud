@@ -32,7 +32,7 @@ class Column
 
 	public function getAlias(): string
 	{
-		return lcfirst(Container::camelize(str_replace('.', '_', $this->getField())));
+		return lcfirst(str_replace('.', '_', Container::camelize($this->getField())));
 	}
 
 	public function getField(): string

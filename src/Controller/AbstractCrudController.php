@@ -1038,6 +1038,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			$entityRelations = explode('.', $fieldName);
 			$fieldName = array_pop($entityRelations);
 
+
 			$entityAlias = null;
 			foreach ($entityRelations as $entityRelation) {
 				if (!$entityMetadata->hasAssociation($entityRelation)) {
@@ -1094,7 +1095,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 	private function buildColumns(
 		EntityColumnViewGroupEnum|string $viewGroup = null,
-		bool $searchable = false,
+		bool|null $searchable = null,
 		bool $includeIdentifier = false,
 	): Generator {
 		foreach ($this->getEntityColumns($viewGroup, $searchable, $includeIdentifier) as $column) {
@@ -1204,7 +1205,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 		$relationExpressions = [];
 		foreach (
-			$this->buildColumns($viewGroup, true, true) as [
+			$this->buildColumns($viewGroup, includeIdentifier: true) as [
 			'entityAlias' => $entityAlias,
 			'entityField' => $entityField,
 			'relations' => $relations,
@@ -1381,7 +1382,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	 */
 	public function getEntityColumns(
 		EntityColumnViewGroupEnum|string|false $viewGroup = null,
-		bool $searchable = false,
+		bool|null $searchable = null,
 		bool $includeIdentifier = false
 	): Generator {
 		$viewGroup = (is_string($viewGroup) ? EntityColumnViewGroupEnum::tryFrom($viewGroup) : null) ?: $viewGroup;
@@ -1401,9 +1402,11 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				)
 				&&
 				(
-					null === $c->getSearchable() ||
-					$c->getSearchable() instanceof SearchableOptions ||
-					$searchable === $c->getSearchable()
+					$searchable === null || (
+						null === $c->getSearchable() ||
+						$c->getSearchable() instanceof SearchableOptions ||
+						$searchable === $c->getSearchable()
+					)
 				)
 		);
 
