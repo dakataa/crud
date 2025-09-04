@@ -194,12 +194,27 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			}
 		}
 
-		$getValue = function (object|null $object, string $field, Column $column) {
+		$getValue = function (object|null $object, string $field, Column $column) use($request, $additionalEntityFields) {
 			if (!$object) {
 				return null;
 			}
 
-			$value = null;
+			$value = $this->columnValueDetermination($request, $object, $column) ?: null;
+
+			if ($getter = $column->getGetter()) {
+				if (is_string($getter)) {
+					$getter = sprintf('get%s', (preg_replace('/^get/i', '', Container::camelize($getter))));
+
+					if (method_exists($object, $getter)) {
+						$value = $object->$getter();
+					}
+				}
+
+				if (is_callable($getter) && $getter instanceof Closure) {
+					$value = $getter($value);
+				}
+			}
+
 			foreach (['get', 'has', 'is'] as $methodPrefix) {
 				$method = sprintf(
 					'%s%s',
@@ -218,8 +233,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			}
 
 			if ($value instanceof Collection) {
-				$value = new class(array_map(fn(Stringable $v) => $v->__toString(), $value->toArray())) extends
-					ArrayCollection {
+				$value = new class(array_map(fn(Stringable $v) => $v->__toString(), $value->toArray())) extends ArrayCollection {
 					public function __toString()
 					{
 						return implode(', ', $this->getValues());
@@ -235,10 +249,14 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				$value = $value->value;
 			}
 
+			if(is_array($value) && false === $column->isRaw()) {
+				$value = json_encode($value);
+			}
+
 			if (is_object($value)) {
 				if ($value instanceof Stringable) {
 					$value = $value->__toString();
-				} else {
+				} else if(false === $column->isRaw()) {
 					$value = json_encode($value);
 				}
 			}
@@ -254,23 +272,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 		$result = [];
 		foreach ($this->getEntityColumns($viewGroup, includeIdentifier: true) as $column) {
-			$value = $this->columnValueDetermination($request, $object, $column);
-
-			if ($getter = $column->getGetter()) {
-				if (is_string($getter)) {
-					$getter = sprintf('get%s', (preg_replace('/^get/i', '', Container::camelize($getter))));
-
-					if (method_exists($object, $getter)) {
-						$value = $object->$getter();
-					}
-				}
-
-				if (is_callable($getter) && $getter instanceof Closure) {
-					$value = $getter($value);
-				}
-			}
-
-
 			$dataObject = $object;
 			$fieldPath = explode('.', $column->getField());
 			foreach ($fieldPath as $fieldAlias) {
@@ -279,12 +280,16 @@ abstract class AbstractCrudController implements CrudControllerInterface
 					break;
 				}
 
+				if(false === $classMetaData->isSingleValuedAssociation($fieldAlias)) {
+					break;
+				}
+
 				if (null === $dataObject = $classMetaData->getFieldValue($dataObject, $fieldAlias)) {
 					break;
 				}
 			}
 
-			$result[$column->getField()] = $getValue($dataObject, $fieldAlias, $column);
+			$result[$column->getField()] = $getValue($dataObject, $fieldAlias ?? $fieldPath, $column);
 		}
 
 		return $result;
@@ -294,7 +299,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		Request $request,
 		object $object,
 		Column $column
-	): false|null|string|int|float|BackedEnum|Collection {
+	): mixed {
 		return false;
 	}
 
