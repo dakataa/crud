@@ -201,30 +201,32 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 			$value = $this->columnValueDetermination($request, $object, $column) ?: null;
 
-			if ($getter = $column->getGetter()) {
-				if (is_string($getter)) {
-					$getter = sprintf('get%s', (preg_replace('/^get/i', '', Container::camelize($getter))));
+			if (null == $value) {
+				if ($getter = $column->getGetter()) {
+					if (is_string($getter)) {
+						$getter = sprintf('get%s', (preg_replace('/^get/i', '', Container::camelize($getter))));
 
-					if (method_exists($object, $getter)) {
-						$value = $object->$getter();
+						if (method_exists($object, $getter)) {
+							$value = $object->$getter();
+						}
+					}
+
+					if (is_callable($getter) && $getter instanceof Closure) {
+						$value = $getter($value);
 					}
 				}
 
-				if (is_callable($getter) && $getter instanceof Closure) {
-					$value = $getter($value);
-				}
-			}
+				foreach (['get', 'has', 'is'] as $methodPrefix) {
+					$method = sprintf(
+						'%s%s',
+						$methodPrefix,
+						Container::camelize(Container::underscore($field))
+					);
 
-			foreach (['get', 'has', 'is'] as $methodPrefix) {
-				$method = sprintf(
-					'%s%s',
-					$methodPrefix,
-					Container::camelize(Container::underscore($field))
-				);
-
-				if (method_exists($object, $method)) {
-					$value = $object->$method();
-					break;
+					if (method_exists($object, $method)) {
+						$value = $object->$method();
+						break;
+					}
 				}
 			}
 
@@ -1254,6 +1256,10 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 		foreach (array_merge($mappedQueryParameters, $mappedPathParameters) as $mappedPathAttribute) {
 			if (!isset($allParameters[$mappedPathAttribute->getParameter()])) {
+				if (!$mappedPathAttribute->isRequired()) {
+					continue;
+				}
+
 				throw new Exception(
 					sprintf('Missing mapped attribute: %s', $mappedPathAttribute->getParameter())
 				);
