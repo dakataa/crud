@@ -194,7 +194,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			}
 		}
 
-		$getValue = function (object|null $object, string $field, Column $column) use($request, $additionalEntityFields) {
+		$getValue = function (object|null $object, string $field, Column $column) use ($request, $additionalEntityFields) {
 			if (!$object) {
 				return null;
 			}
@@ -251,15 +251,17 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				$value = $value->value;
 			}
 
-			if(is_array($value) && false === $column->isRaw()) {
+			if (is_array($value) && false === $column->isRaw()) {
 				$value = json_encode($value);
 			}
 
 			if (is_object($value)) {
 				if ($value instanceof Stringable) {
 					$value = $value->__toString();
-				} else if(false === $column->isRaw()) {
-					$value = json_encode($value);
+				} else {
+					if (false === $column->isRaw()) {
+						$value = json_encode($value);
+					}
 				}
 			}
 
@@ -282,7 +284,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 					break;
 				}
 
-				if(false === $classMetaData->isSingleValuedAssociation($fieldAlias)) {
+				if (false === $classMetaData->isSingleValuedAssociation($fieldAlias)) {
 					break;
 				}
 
@@ -548,7 +550,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			}
 
 			if ($this->getEntity()->getFqcn() !== $column['fqcn']) {
-				continue;
+				$entityMetadata = $this->serviceContainer->entityManager->getClassMetadata($column['fqcn']);
+			} else {
+				$entityMetadata = $this->getEntityClassMetadata();
 			}
 
 			$columnName = $column['entityField'];
@@ -556,18 +560,16 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				'_route_params'
 			)[$mappedPathParameter->getParameter()] ?? null;
 
-			if ($fieldValue && $this->getEntityClassMetadata()->hasAssociation($columnName)) {
-				$associationClassName = $this->getEntityClassMetadata()->getAssociationTargetClass($columnName);
-				if (null === $fieldValue = $this->serviceContainer->entityManager->getRepository(
-						$associationClassName
-					)->find($fieldValue)) {
+			if ($fieldValue && $entityMetadata->hasAssociation($columnName)) {
+				$associationClassName = $entityMetadata->getAssociationTargetClass($columnName);
+				if (null === $fieldValue = $this->serviceContainer->entityManager->getRepository($associationClassName)->find($fieldValue)) {
 					throw new Exception(
 						sprintf('Cannot found "%s" association with PK %s', $columnName, $fieldValue)
 					);
 				}
 			}
 
-			yield $columnName => $fieldValue;
+			yield $fieldName => $fieldValue;
 		}
 	}
 
@@ -599,8 +601,12 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				}
 			} else {
 				$object = new ($this->getEntityClassMetadata()->getName());
-				foreach ($this->getMappedFields($request, $action) as $columnName => $fieldValue) {
-					$this->getEntityClassMetadata()->setFieldValue($object, $columnName, $fieldValue);
+				foreach ($this->getMappedFields($request, $action) as $fieldName => $fieldValue) {
+					if(!$this->getEntityClassMetadata()->hasField($fieldName) && !$this->getEntityClassMetadata()->hasAssociation($fieldName)) {
+						continue;
+					}
+
+					$this->getEntityClassMetadata()->setFieldValue($object, $fieldName, $fieldValue);
 				}
 			}
 		}
@@ -614,7 +620,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			'action' => $request->getUri(),
 			'method' => Request::METHOD_POST,
 			'csrf_protection' => false,
-		], $this->getEntityType($action)?->getOptions() ?: []);
+		], $this->buildFormTypeOptions($request, $action, $this->getEntityType($action)?->getOptions() ?: []));
 
 		$this->onFormTypeBeforeCreate($request, $object, $action);
 		$form = $this->serviceContainer->formFactory->create(
@@ -1563,6 +1569,11 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		$controller_name = strtolower(str_replace('Controller', '', end($split)));
 
 		return Container::underscore($controller_name);
+	}
+
+	protected function buildFormTypeOptions(Request $request, Action $action, array $options): array
+	{
+		return $options;
 	}
 
 	protected function onFormTypeCreate(Request $request, FormInterface &$type, &$object)
