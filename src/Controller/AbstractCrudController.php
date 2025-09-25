@@ -1431,7 +1431,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	{
 		return implode(
 			self::COMPOSITE_IDENTIFIER_SEPARATOR,
-			$this->getEntityClassMetadata()->getIdentifierValues($object)
+			$this->serviceContainer->entityManager->getUnitOfWork()->getEntityIdentifier($object)
 		);
 	}
 
