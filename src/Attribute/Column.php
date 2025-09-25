@@ -8,6 +8,7 @@ use Dakataa\Crud\Enum\SortTypeEnum;
 use Dakataa\Crud\Utils\StringHelper;
 use Stringable;
 use Symfony\Component\DependencyInjection\Container;
+use Symfony\Component\ExpressionLanguage\Expression;
 
 #[Attribute(Attribute::TARGET_CLASS | Attribute::TARGET_METHOD | Attribute::IS_REPEATABLE)]
 class Column
@@ -26,6 +27,7 @@ class Column
 		protected bool|SortTypeEnum $sortable = true,
 		protected array $options = [],
 		protected string|array|null $roles = null,
+		protected null|string|Expression $permission = null,
 		protected bool $identifier = false
 	) {
 	}
@@ -206,6 +208,18 @@ class Column
 	public function setIdentifier(bool $v): Column
 	{
 		$this->identifier = $v;
+
+		return $this;
+	}
+
+	public function getPermission(): Expression|string|null
+	{
+		return $this->permission;
+	}
+
+	public function setPermission(Expression|string|null $permission): Column
+	{
+		$this->permission = $permission;
 
 		return $this;
 	}

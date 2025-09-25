@@ -199,8 +199,11 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				return null;
 			}
 
-			$value = $this->columnValueDetermination($request, $object, $column) ?: null;
+			if($column->getPermission() && false === $this->isAccessGranted($column->getPermission(), $object)) {
+				return null;
+			}
 
+			$value = $this->columnValueDetermination($request, $object, $column) ?: null;
 			if (null == $value) {
 				if ($getter = $column->getGetter()) {
 					if (is_string($getter)) {
@@ -324,10 +327,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 					$permission => array_values(
 						array_filter(
 							array_map(
-								fn($object) => true === $this->serviceContainer->authorizationChecker->isGranted(
-									$permission,
-									new SecuritySubject($this->getEntity(), $object)
-								) ? $this->getEntityIdentifierValueFromObject($object) : null,
+								fn($object) => $this->isAccessGranted($permission, $object) ? $this->getEntityIdentifierValueFromObject($object) : null,
 								$items
 							)
 						)
@@ -724,20 +724,18 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		$object = $this->getEntityRepository()->find($this->getEntityIdentifierPrepare($id));
 
 		if ($object) {
-			if ($action?->permission && false === $this->serviceContainer->authorizationChecker->isGranted(
-					$action->permission,
-					new SecuritySubject($this->getEntity(), $object)
-				)) {
+			if ($action?->permission && false === $this->isAccessGranted($action->permission, $object)) {
 				throw new AccessDeniedException();
 			}
 
 			$this->batchDelete($request, [$object]);
 		}
 
-		$route = $this->serviceContainer->router->getRouteCollection()->get($this->getRoute('list')->getName());
+		$attributeRoute = $this->getRoute($request, 'list');
+		$route = $this->serviceContainer->router->getRouteCollection()->get($attributeRoute->getName());
 		$routeVariables = $route->compile()->getPathVariables();
 
-		return new RedirectResponse($this->serviceContainer->router->generate($this->getRoute('list')->getName(), [
+		return new RedirectResponse($this->serviceContainer->router->generate($attributeRoute->getName(), [
 			...array_intersect_key($request->attributes->all(), array_flip($routeVariables)),
 		]));
 	}
@@ -1493,6 +1491,10 @@ abstract class AbstractCrudController implements CrudControllerInterface
 						$searchable === $c->getSearchable()
 					)
 				)
+				&&
+				(
+					$c->getPermission() === null || $this->isAccessGranted($c->getPermission())
+				)
 		);
 
 		if ($includeIdentifier) {
@@ -1602,10 +1604,10 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return $this->serviceContainer->entityManager->getRepository($this->getEntity()->getFqcn());
 	}
 
-	protected function getRoute(string $method = null): Route
+	protected function getRoute(Request $request, string $method = null): Route
 	{
 		if (null !== $action = current(
-				array_values(array_filter($this->getActions(), fn(Action $action) => $action->getName() === $method))
+				array_values(array_filter($this->getActions($request), fn(Action $action) => $action->getName() === $method))
 			) ?: null) {
 			return $action->getRoute();
 		}
@@ -1665,10 +1667,15 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 	public function isActionAccessGranted(Request $request, Action $action, object|null $object = null): bool
 	{
-		return !$action->permission || $this->serviceContainer->authorizationChecker->isGranted(
-				$action->permission,
-				new SecuritySubject($this->getEntity(), $object)
-			);
+		return !$action->permission || $this->isAccessGranted($action->permission, $object);
+	}
+
+	public function isAccessGranted(string $permission, object|null $object = null)
+	{
+		return $this->serviceContainer->authorizationChecker->isGranted(
+			$permission,
+			new SecuritySubject($this->getEntity(), $object)
+		);
 	}
 
 	protected function getExpressionLanguage(): ExpressionLanguage
