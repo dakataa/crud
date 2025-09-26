@@ -49,6 +49,7 @@ use ReflectionException;
 use ReflectionMethod;
 use Stringable;
 use Symfony\Component\DependencyInjection\Container;
+use Symfony\Component\ExpressionLanguage\Expression;
 use Symfony\Component\ExpressionLanguage\ExpressionLanguage;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
 use Symfony\Component\Form\Extension\Core\Type\CollectionType;
@@ -1489,6 +1490,17 @@ abstract class AbstractCrudController implements CrudControllerInterface
 						null === $c->getSearchable() ||
 						$c->getSearchable() instanceof SearchableOptions ||
 						$searchable === $c->getSearchable()
+					)
+				)
+				&&
+				(
+					$c->getRoles() === null || $this->serviceContainer->authorizationChecker->isGranted(
+						is_array($c->getRoles()) ? new Expression(
+							implode(
+								' or ',
+								array_map(fn(string $role) => sprintf('is_granted("%s")', $role), $c->getRoles())
+							)
+						) : $c->getRoles()
 					)
 				)
 				&&
