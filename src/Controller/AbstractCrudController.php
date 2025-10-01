@@ -976,7 +976,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				];
 
 				$entityType = $type ?? TextType::class;
-
 				if ($column->getSearchable() instanceof SearchableOptions) {
 					$columnOptions = [
 						...($column->getSearchable()->getOptions() ?: []),
@@ -1134,6 +1133,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			}
 		} else {
 			if (
+				false === $column->getSearchable() &&
 				false === $entityMetadata->hasField($fieldName) &&
 				false === $entityMetadata->hasAssociation($fieldName) &&
 				(!$entityMetadata->isIdentifierComposite && $fieldName !== 'compositeId')
@@ -1149,8 +1149,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 
 		if ($column->getSearchable() !== false) {
-			if (false === $entityMetadata->hasField($fieldName) && false === ($column->getSearchable(
-					) instanceof SearchableOptions)) {
+			if (false === $entityMetadata->hasField($fieldName) && false === ($column->getSearchable() instanceof SearchableOptions)) {
 				$column->setSearchable(false);
 			}
 		}
@@ -1348,7 +1347,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				}
 			}
 
-			if ($isFilterApplied) {
+			if ($canSelect && $isFilterApplied) {
 				$parameter = sprintf('p%s', $column->getAlias());
 
 				switch ($type) {
