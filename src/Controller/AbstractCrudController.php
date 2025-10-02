@@ -978,8 +978,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				$entityType = $type ?? TextType::class;
 				if ($column->getSearchable() instanceof SearchableOptions) {
 					$columnOptions = [
-						...($column->getSearchable()->getOptions() ?: []),
 						...$columnOptions,
+						...($column->getSearchable()->getOptions() ?: []),
 					];
 
 					$entityType = $column->getSearchable()->getType() ?: $entityType;
