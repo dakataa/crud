@@ -6,7 +6,6 @@ use Dakataa\Crud\Attribute\Entity;
 use Dakataa\Crud\Attribute\Navigation\NavigationGroup;
 use Dakataa\Crud\Attribute\Navigation\NavigationItem;
 use Dakataa\Crud\Command\MakerController;
-use Dakataa\Crud\Controller\CrudControllerInterface;
 use Dakataa\Crud\Controller\CrudServiceContainer;
 use Dakataa\Crud\Controller\GeneralController;
 use Dakataa\Crud\EventSubscriber\CrudSubscriber;

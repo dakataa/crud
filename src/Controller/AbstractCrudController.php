@@ -630,7 +630,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			$formOptions
 		);
 
-		$this->onFormTypeCreate($request, $form, $object);
+		$this->onFormTypeCreate($request, $action, $form, $object);
 		$responseStatus = 200;
 		if ($request->isMethod(Request::METHOD_POST)) {
 			$form->handleRequest($request);
@@ -1589,7 +1589,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return $options;
 	}
 
-	protected function onFormTypeCreate(Request $request, FormInterface &$type, &$object)
+	protected function onFormTypeCreate(Request $request, Action $action, FormInterface $type, object $object)
 	{
 	}
 
@@ -1681,11 +1681,16 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return !$action->permission || $this->isAccessGranted($action->permission, $object);
 	}
 
-	public function isAccessGranted(string $permission, object|null $object = null)
+	public function isAccessGranted(string $permission, object|null $object = null): bool
 	{
+		$entity = $this->getEntity();
+		if($object && $entity->getFqcn() !== $objectFCQN = $this->serviceContainer->entityManager->getClassMetadata($object::class)->getName()) {
+			$entity = new Entity($objectFCQN);
+		}
+
 		return $this->serviceContainer->authorizationChecker->isGranted(
 			$permission,
-			new SecuritySubject($this->getEntity(), $object)
+			new SecuritySubject($entity, $object)
 		);
 	}
 
