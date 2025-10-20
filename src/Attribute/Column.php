@@ -51,9 +51,9 @@ class Column
 
 	public function getLabel(): ?string
 	{
-		$label = explode('.', $this->label ?: $this->field);
+		$label = $this->label ?: $this->field;
 
-		return StringHelper::titlize(Container::camelize(ucfirst(array_pop($label))));
+		return StringHelper::titlize($label);
 	}
 
 	public function setLabel(?string $label): Column

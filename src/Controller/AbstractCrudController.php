@@ -1110,7 +1110,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			$entityRelations = explode('.', $fieldName);
 			$fieldName = array_pop($entityRelations);
 
-
 			$entityAlias = null;
 			foreach ($entityRelations as $entityRelation) {
 				if (!$entityMetadata->hasAssociation($entityRelation)) {
