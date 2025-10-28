@@ -580,7 +580,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		mixed $id = null,
 		bool $save = true
 	): ?Response {
-		if (empty($action)) {
+		if (!$action) {
 			throw new Exception('This Action is not enabled in the list of Entity Actions.');
 		}
 
@@ -616,7 +616,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			throw new AccessDeniedException();
 		}
 
-		// Setup Form type options
+		// Form type options
 		$formOptions = array_merge_recursive([
 			'action' => $request->getUri(),
 			'method' => Request::METHOD_POST,
@@ -654,33 +654,29 @@ abstract class AbstractCrudController implements CrudControllerInterface
 					],
 				];
 
-				$action = $this->getAction($request, 'edit') ?: $this->getAction($request, 'list');
+				if ($action->getRoute()) {
+					$route = $this->serviceContainer->router->getRouteCollection()->get(
+						$action->getRoute()->getName()
+					);
+					$routeVariables = $route->compile()->getPathVariables();
 
-				if ($action) {
-					if ($action->getRoute()) {
-						$route = $this->serviceContainer->router->getRouteCollection()->get(
+					$redirect = [
+						'route' => $this->serviceContainer->router->getRouteCollection()->get(
 							$action->getRoute()->getName()
-						);
-						$routeVariables = $route->compile()->getPathVariables();
+						),
+						'parameters' => [
+							'id' => $this->getEntityIdentifierValueFromObject($object),
+							...(array_intersect_key($request->attributes->all(), array_flip($routeVariables))),
+						],
+					];
 
-						$redirect = [
-							'route' => $this->serviceContainer->router->getRouteCollection()->get(
-								$action->getRoute()->getName()
-							),
-							'parameters' => [
-								'id' => $this->getEntityIdentifierValueFromObject($object),
-								...(array_intersect_key($request->attributes->all(), array_flip($routeVariables))),
-							],
-						];
+					$redirect['url'] = $this->serviceContainer->router->generate(
+						$action->getRoute()->getName(),
+						$redirect['parameters']
+					);
 
-						$redirect['url'] = $this->serviceContainer->router->generate(
-							$action->getRoute()->getName(),
-							$redirect['parameters']
-						);
-
-						if ($request->getPreferredFormat() === 'html') {
-							return new RedirectResponse($redirect['url']);
-						}
+					if ($request->getPreferredFormat() === 'html') {
+						return new RedirectResponse($redirect['url']);
 					}
 				}
 			} else {
