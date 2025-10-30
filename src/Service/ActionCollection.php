@@ -51,9 +51,6 @@ class ActionCollection
 
 		$controllerReflectionClass = new ReflectionClass($controllerFQCN);
 		$controllerEntityFQCN = ($controllerReflectionClass->getAttributes(Entity::class)[0] ?? null)?->getArguments()[0] ?? null;
-        if (null === $controllerEntityFQCN) {
-			return;
-		}
 
 		$isAccessGranted = function (ReflectionClass|ReflectionMethod $reflection): bool {
 			/** @var IsGranted[] $isGrantedAttributes */

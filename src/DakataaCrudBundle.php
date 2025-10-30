@@ -13,6 +13,7 @@ use Dakataa\Crud\Service\ActionCollection;
 use Dakataa\Crud\Service\Navigation;
 use Dakataa\Crud\Service\RouteCollection;
 use ReflectionClass;
+use ReflectionMethod;
 use Symfony\Component\Config\Definition\Configurator\DefinitionConfigurator;
 use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -82,7 +83,7 @@ class DakataaCrudBundle extends AbstractBundle
 			static function (
 				ChildDefinition $definition,
 				Entity $attribute,
-				ReflectionClass $reflector
+				ReflectionClass|ReflectionMethod $reflector
 			): void {
 				$definition->addTag('dakataa.crud.entity');
 			}
@@ -93,7 +94,7 @@ class DakataaCrudBundle extends AbstractBundle
 			static function (
 				ChildDefinition $definition,
 				NavigationItem $attribute,
-				ReflectionClass $reflector
+				ReflectionClass|ReflectionMethod $reflector
 			): void {
 				$definition->addTag('dakataa.crud.navigation');
 			}

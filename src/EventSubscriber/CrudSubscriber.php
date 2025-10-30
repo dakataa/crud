@@ -2,6 +2,7 @@
 
 namespace Dakataa\Crud\EventSubscriber;
 
+use Dakataa\Crud\Attribute\LoadAction;
 use Dakataa\Crud\Controller\AbstractCrudController;
 use Dakataa\Crud\Controller\CrudServiceContainer;
 use Dakataa\Crud\Service\ActionCollection;
@@ -21,115 +22,122 @@ use Dakataa\Crud\Twig\TemplateProvider;
 
 class CrudSubscriber
 {
-    public function __construct(
-        protected CrudServiceContainer $crudServiceContainer,
-        protected FormFactoryInterface $formFactory,
-        protected RouterInterface $router,
-        protected EventDispatcherInterface $dispatcher,
-        protected EntityManagerInterface $entityManager,
-        protected ParameterBagInterface $parameterBag,
-        protected ActionCollection $actionCollection,
-        protected ?AuthorizationCheckerInterface $authorizationChecker = null,
-        protected ?TemplateProvider $templateProvider = null,
-    ) {
-    }
+	public function __construct(
+		protected CrudServiceContainer $crudServiceContainer,
+		protected FormFactoryInterface $formFactory,
+		protected RouterInterface $router,
+		protected EventDispatcherInterface $dispatcher,
+		protected EntityManagerInterface $entityManager,
+		protected ParameterBagInterface $parameterBag,
+		protected ActionCollection $actionCollection,
+		protected ?AuthorizationCheckerInterface $authorizationChecker = null,
+		protected ?TemplateProvider $templateProvider = null,
+	) {
+	}
 
-    private ?AbstractCrudController $controller = null;
+	private ?AbstractCrudController $controller = null;
 
-    #[AsEventListener]
-    public function onKernelController(ControllerArgumentsEvent $event): void
-    {
-        if (!is_array($event->getController())) {
-            return;
-        }
+	#[AsEventListener]
+	public function onKernelController(ControllerArgumentsEvent $event): void
+	{
+		if (!is_array($event->getController())) {
+			return;
+		}
 
-        [$controllerObject, $method] = $event->getController();
+		[$controllerObject, $method] = $event->getController();
 
-        [$controllerClass] = explode('::', $event->getRequest()->get('_controller'));
+		[$controllerClass] = explode('::', $event->getRequest()->get('_controller'));
 
-        if (!class_exists($controllerClass)) {
-            return;
-        }
+		if (!class_exists($controllerClass)) {
+			return;
+		}
 
-        if (null === $action = $this->actionCollection->load($controllerClass, method: $method)->current()) {
-            return;
-        }
+		if (null === $action = $this->actionCollection->load($controllerClass, method: $method)->current()) {
+			return;
+		}
 
-        if ($action->getMethod() === $method && is_a($controllerObject, AbstractCrudController::class, true)) {
-            $this->controller = $controllerObject;
 
-            return;
-        }
+		if ($action->getMethod() === $method && is_a($controllerObject, AbstractCrudController::class, true)) {
+			$this->controller = $controllerObject;
 
-        $this->controller = new class (
-            get_class($event->getController()[0]),
-            $this,
-            $event
-        ) extends AbstractCrudController {
+			return;
+		}
 
-            public function __construct(
-                protected string $originClassName,
-                protected CrudSubscriber $crudSubscriber,
-                protected ControllerArgumentsEvent $controllerEvent
-            ) {
-            }
+		$this->controller = new class (
+			get_class($event->getController()[0]),
+			$this,
+			$event
+		) extends AbstractCrudController {
 
-            public function getControllerClass(): string
-            {
-                return $this->originClassName;
-            }
+			public function __construct(
+				protected string $originClassName,
+				protected CrudSubscriber $crudSubscriber,
+				protected ControllerArgumentsEvent $controllerEvent
+			) {
+			}
 
-            protected function getPHPAttributes(string $attributeFQCN, string|null $method = null): array
-            {
-                return $this->crudSubscriber->getPHPAttributes($this->controllerEvent, $attributeFQCN);
-            }
-        };
+			public function getControllerClass(): string
+			{
+				return $this->originClassName;
+			}
 
-        $this->controller->setServiceContainer($this->crudServiceContainer);
+			protected function getPHPAttributes(string $attributeFQCN, string|null $method = null): array
+			{
+				return $this->crudSubscriber->getPHPAttributes($this->controllerEvent, $attributeFQCN);
+			}
+		};
 
-        /** @var IsGranted $attribute */
-        foreach ($event->getAttributes(IsGranted::class) as $attribute) {
-            if (!$this->authorizationChecker->isGranted($attribute->attribute)) {
-                $message = $attribute->message ?: sprintf(
-                    'Access Denied by #[IsGranted(%s)] on controller',
-                    $attribute->attribute
-                );
+		$this->controller->setServiceContainer($this->crudServiceContainer);
 
-                if ($statusCode = $attribute->statusCode) {
-                    throw new HttpException($statusCode, $message, code: $attribute->exceptionCode ?? 0);
-                }
+		/** @var IsGranted $attribute */
+		foreach ($event->getAttributes(IsGranted::class) as $attribute) {
+			if (!$this->authorizationChecker->isGranted($attribute->attribute)) {
+				$message = $attribute->message ?: sprintf(
+					'Access Denied by #[IsGranted(%s)] on controller',
+					$attribute->attribute
+				);
 
-                $accessDeniedException = new AccessDeniedException($message, code: $attribute->exceptionCode ?? 403);
-                $accessDeniedException->setAttributes($attribute->attribute);
+				if ($statusCode = $attribute->statusCode) {
+					throw new HttpException($statusCode, $message, code: $attribute->exceptionCode ?? 0);
+				}
 
-                throw $accessDeniedException;
-            }
-        }
+				$accessDeniedException = new AccessDeniedException($message, code: $attribute->exceptionCode ?? 403);
+				$accessDeniedException->setAttributes($attribute->attribute);
 
-        if (!method_exists($this->controller, $action->name)) {
-            return;
-        }
+				throw $accessDeniedException;
+			}
+		}
 
-        $event->setController([$this->controller, $action->name], $event->getAttributes());
-    }
+		/** @var LoadAction $loadAction */
+		$loadAction = current($event->getAttributes(LoadAction::class));
+		if (!$loadAction) {
+			throw new \Exception('LoadAction Attribute not found');
+		}
 
-    public function getPHPAttributes(ControllerArgumentsEvent $controllerEvent, string $attributeClass): array
-    {
-        $attributes = array_reverse($controllerEvent->getAttributes($attributeClass));
-        if (!empty($attributes)) {
-            return $attributes;
-        }
+		if (!method_exists($this->controller, $loadAction->name)) {
+			return;
+		}
 
-        // Get Method Attributes
-        return array_map(
-            fn(ReflectionAttribute $reflectionAttribute) => $reflectionAttribute->newInstance(),
-            $controllerEvent->getAttributes($attributeClass)
-        );
-    }
+		$event->setController([$this->controller, $loadAction->name], $event->getAttributes());
+	}
 
-    public function getController(): ?AbstractCrudController
-    {
-        return $this->controller;
-    }
+	public function getPHPAttributes(ControllerArgumentsEvent $controllerEvent, string $attributeClass): array
+	{
+		$attributes = array_reverse($controllerEvent->getAttributes($attributeClass));
+		if (!empty($attributes)) {
+			return $attributes;
+		}
+
+		// Get Method Attributes
+		return array_map(
+			fn(ReflectionAttribute $reflectionAttribute) => $reflectionAttribute->newInstance(),
+			$controllerEvent->getAttributes($attributeClass)
+		);
+	}
+
+	public function getController(): ?AbstractCrudController
+	{
+		return $this->controller;
+	}
 
 }

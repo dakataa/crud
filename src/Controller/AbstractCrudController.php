@@ -200,7 +200,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				return null;
 			}
 
-			if($column->getPermission() && false === $this->isAccessGranted($column->getPermission(), $object)) {
+			if ($column->getPermission() && false === $this->isAccessGranted($column->getPermission(), $object)) {
 				return null;
 			}
 
@@ -328,7 +328,10 @@ abstract class AbstractCrudController implements CrudControllerInterface
 					$permission => array_values(
 						array_filter(
 							array_map(
-								fn($object) => $this->isAccessGranted($permission, $object) ? $this->getEntityIdentifierValueFromObject($object) : null,
+								fn($object) => $this->isAccessGranted(
+									$permission,
+									$object
+								) ? $this->getEntityIdentifierValueFromObject($object) : null,
 								$items
 							)
 						)
@@ -348,21 +351,14 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	]
 	public function list(Request $request): Response
 	{
-		$action = $this->getAction($request, 'list');
-		if (empty($action)) {
+		$action = $this->getAction($request);
+		if (!$action) {
 			throw new Exception('This Action "list" is not enabled in the list of Entity Actions.');
 		}
 
 		if (!$this->isActionAccessGranted($request, $action)) {
 			throw new AccessDeniedException();
 		}
-
-//		['pagination' => $pagination] = (new OptionsResolver)
-//			->setDefined(['filter'])
-//			->setAllowedTypes('filter', 'boolean')
-//			->setDefaults([
-//				'filter' => true,
-//			])->resolve($action->options ?? []);
 
 		$filterForm = $this->getFilterForm($request);
 		$batchForm = $this->handleBatch($request);
@@ -425,7 +421,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		Request $request,
 		string $type = self::EXPORT_EXCEL
 	): StreamedResponse {
-		$action = $this->getAction($request, 'export');
+		$action = $this->getAction($request);
 		$exportTypes = [
 			self::EXPORT_EXCEL => ['ext' => 'xlsx', 'writer' => Xlsx::class],
 			self::EXPORT_EXCEL2007 => ['ext' => 'xls', 'writer' => Xls::class],
@@ -501,7 +497,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	#[Action]
 	public function add(Request $request, #[MapQueryParameter] bool $save = null): ?Response
 	{
-		return $this->modify($request, $this->getAction($request, 'add'), save: $save ?: true);
+		return $this->modify($request, $this->getAction($request), save: $save ?: true);
 	}
 
 	/**
@@ -511,7 +507,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	#[Action(visibility: ActionVisibilityEnum::Object)]
 	public function view(Request $request, int|string $id): ?Response
 	{
-		$action = $this->getAction($request, 'view');
+		$action = $this->getAction($request);
 		$object = $this->getEntityRepository()->find($this->getEntityIdentifierPrepare($id));
 		if (empty($object)) {
 			throw new NotFoundHttpException('Not Found');
@@ -603,7 +599,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			} else {
 				$object = new ($this->getEntityClassMetadata()->getName());
 				foreach ($this->getMappedFields($request, $action) as $fieldName => $fieldValue) {
-					if(!$this->getEntityClassMetadata()->hasField($fieldName) && !$this->getEntityClassMetadata()->hasAssociation($fieldName)) {
+					if (!$this->getEntityClassMetadata()->hasField($fieldName) && !$this->getEntityClassMetadata()->hasAssociation($fieldName)) {
 						continue;
 					}
 
@@ -706,7 +702,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	#[Action(visibility: ActionVisibilityEnum::Object)]
 	public function edit(Request $request, mixed $id = null, #[MapQueryParameter] bool $save = null): ?Response
 	{
-		return $this->modify($request, $this->getAction($request, 'edit'), $id, $save ?: true);
+		return $this->modify($request, $this->getAction($request), $id, $save ?: true);
 	}
 
 	#[Route(path: '/{id}/delete', methods: ['DELETE', 'OPTIONS'])]
@@ -717,7 +713,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			return new Response;
 		}
 
-		$action = $this->getAction($request, 'delete');
+		$action = $this->getAction($request);
 		$object = $this->getEntityRepository()->find($this->getEntityIdentifierPrepare($id));
 
 		if ($object) {
@@ -1613,7 +1609,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	protected function getRoute(Request $request, string $method = null): Route
 	{
 		if (null !== $action = current(
-				array_values(array_filter($this->getActions($request), fn(Action $action) => $action->getName() === $method))
+				array_values(
+					array_filter($this->getActions($request), fn(Action $action) => $action->getName() === $method)
+				)
 			) ?: null) {
 			return $action->getRoute();
 		}
@@ -1652,8 +1650,11 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		);
 	}
 
-	public function getAction(Request $request, string $name): ?Action
+	public function getAction(Request $request, string $name = null): ?Action
 	{
+		[, $method] = explode('::', $request->get('_controller'));
+		$name ??= $method;
+
 		return current(
 			array_values(array_filter($this->getActions($request), fn(Action $action) => $action->getName() === $name))
 		) ?: null;
@@ -1679,7 +1680,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	public function isAccessGranted(string $permission, object|null $object = null): bool
 	{
 		$entity = $this->getEntity();
-		if($object && $entity->getFqcn() !== $objectFCQN = $this->serviceContainer->entityManager->getClassMetadata($object::class)->getName()) {
+		if ($object && $entity->getFqcn() !== $objectFCQN = $this->serviceContainer->entityManager->getClassMetadata($object::class)->getName()) {
 			$entity = new Entity($objectFCQN);
 		}
 
