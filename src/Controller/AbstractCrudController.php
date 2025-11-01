@@ -32,9 +32,9 @@ use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\Common\Collections\Order;
 use Doctrine\DBAL\Types\Types;
+use Doctrine\ORM\Mapping\ClassMetadata;
 use Doctrine\ORM\Query\Expr\Join;
 use Doctrine\ORM\QueryBuilder;
-use Doctrine\Persistence\Mapping\ClassMetadata;
 use Doctrine\Persistence\ObjectRepository;
 use Exception;
 use Generator;
@@ -586,12 +586,16 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 		$messages = [];
 
+
 		if ($id) {
 			$object = $this->getEntityRepository()->find($this->getEntityIdentifierPrepare($id));
-			if (empty($object)) {
+
+			if (!$object && $this->getEntityClassMetadata()->generatorType !== ClassMetadata::GENERATOR_TYPE_NONE) {
 				throw new NotFoundHttpException('Not Found');
 			}
-		} else {
+		}
+
+		if(empty($object)) {
 			if (false !== $object = $this->findEntityObjectByRequest($request, $action)) {
 				if (!is_a($object, $this->getEntity()->getFqcn(), true)) {
 					throw new NotFoundHttpException('Not Found');
