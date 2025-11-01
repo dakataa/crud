@@ -1231,13 +1231,20 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 		$filters = $this->getFilterForm($request)?->getData();
 		$sortingFields = array_filter($this->prepareSorting($request, $viewGroup));
+		$action = $this->getAction($request);
 		$columnFieldsMapping = $this->getEntityColumnToFieldMapping();
 
 		/** @var PathParameterToFieldMap[] $mappedPathParameters */
-		$mappedPathParameters = $this->getPHPAttributes(PathParameterToFieldMap::class);
+		$mappedPathParameters = [
+			...$this->getPHPAttributes(PathParameterToFieldMap::class),
+			...($action ? $this->getPHPAttributes(PathParameterToFieldMap::class, $action->name) : []),
+		];
 
 		/** @var QueryParameterToFieldMap[] $mappedQueryParameters */
-		$mappedQueryParameters = $this->getPHPAttributes(QueryParameterToFieldMap::class);
+		$mappedQueryParameters = [
+			...$this->getPHPAttributes(QueryParameterToFieldMap::class),
+			...($action ? $this->getPHPAttributes(QueryParameterToFieldMap::class, $action->name) : []),
+		];
 
 		$allParameters = array_intersect_key(
 			array_merge($request->query->all(), $request->attributes->all()),
