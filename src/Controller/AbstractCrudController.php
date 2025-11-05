@@ -586,7 +586,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 		$messages = [];
 
-
 		if ($id) {
 			$object = $this->getEntityRepository()->find($this->getEntityIdentifierPrepare($id));
 
@@ -645,6 +644,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 				$this->serviceContainer->entityManager->persist($form->getData());
 				$this->serviceContainer->entityManager->flush();
+				$object = $form->getData();
 
 				$this->afterFormSave($request, $form);
 
@@ -869,9 +869,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				) ? ['csrf_protection' => false] : []),
 			]);
 
-		$form->setMethod('POST');
-
 		$form
+			->setMethod('POST')
 			->add('ids', CollectionType::class, [
 				'required' => true,
 				'allow_add' => true,
