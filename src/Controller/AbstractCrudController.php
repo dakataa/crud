@@ -594,7 +594,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			}
 		}
 
-		if(empty($object)) {
+		if (empty($object)) {
 			if (false !== $object = $this->findEntityObjectByRequest($request, $action)) {
 				if (!is_a($object, $this->getEntity()->getFqcn(), true)) {
 					throw new NotFoundHttpException('Not Found');
@@ -1278,14 +1278,29 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			$pathParameter = $mappedPathAttribute->getParameter();
 			$pathParameterValue = $allParameters[$pathParameter];
 			$queryParameterAlias = sprintf('pp%s', Container::camelize($mappedPathAttribute->getField()));
-			$query->andWhere(
-				sprintf(
-					'%s.%s = :%s',
-					$column['entityAlias'],
-					$column['entityField'],
-					$queryParameterAlias
-				)
-			)->setParameter($queryParameterAlias, $pathParameterValue);
+			$field = sprintf(
+				'%s.%s',
+				$column['entityAlias'],
+				$column['entityField']
+			);
+
+			if ($pathParameterValue) {
+				$query->andWhere(
+					sprintf(
+						'%s = :%s',
+						$field,
+						$queryParameterAlias
+					)
+				)->setParameter($queryParameterAlias, $pathParameterValue);
+			} else {
+				$query->andWhere(
+					sprintf(
+						'%s = \'\' OR %s is null',
+						$field,
+						$field
+					)
+				);
+			}
 		}
 
 		$relationExpressions = [];
