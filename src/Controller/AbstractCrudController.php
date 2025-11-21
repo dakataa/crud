@@ -522,7 +522,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				'name' => $this->getEntityShortName(),
 				'primaryColumn' => $this->getEntityPrimaryColumn(),
 				'columns' => iterator_to_array($this->getEntityColumns()),
-				'data' => $this->compileEntityData($request, $object),
+				'data' => $this->compileEntityData($request, $object, EntityColumnViewGroupEnum::View),
 				'acl' => $this->getACLs($request, [$object]),
 			],
 			'title' => $action?->title,
@@ -1235,7 +1235,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		$filters = $this->getFilterForm($request)?->getData();
 		$sortingFields = array_filter($this->prepareSorting($request, $viewGroup));
 		$action = $this->getAction($request);
-		$columnFieldsMapping = $this->getEntityColumnToFieldMapping();
 
 		/** @var PathParameterToFieldMap[] $mappedPathParameters */
 		$mappedPathParameters = [
@@ -1305,14 +1304,15 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 		$relationExpressions = [];
 		foreach (
-			$this->buildColumns($viewGroup, includeIdentifier: true) as ['entityAlias' => $entityAlias,
-			'entityField' => $entityField,
-			'relations' => $relations,
-			'type' => $type,
-			'column' => $column,
-			'canSelect' => $canSelect,
-			'nullable' => $nullable,]
-		) {
+			$this->buildColumns($viewGroup, includeIdentifier: true) as [
+				'entityAlias' => $entityAlias,
+				'entityField' => $entityField,
+				'relations' => $relations,
+				'type' => $type,
+				'column' => $column,
+				'canSelect' => $canSelect,
+				'nullable' => $nullable,
+		]) {
 			$queryEntityField = sprintf('%s.%s', $entityAlias, $entityField);
 			$value = $filters[$column->getAlias()] ?? null;
 
