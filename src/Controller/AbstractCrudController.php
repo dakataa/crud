@@ -8,6 +8,7 @@ use Dakataa\Crud\Attribute\ACL;
 use Dakataa\Crud\Attribute\Action;
 use Dakataa\Crud\Attribute\Column;
 use Dakataa\Crud\Attribute\Entity;
+use Dakataa\Crud\Attribute\EntityFinder;
 use Dakataa\Crud\Attribute\EntityGroup;
 use Dakataa\Crud\Attribute\EntityJoinColumn;
 use Dakataa\Crud\Attribute\EntitySort;
@@ -586,15 +587,34 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 		$messages = [];
 
-		if ($id) {
-			$object = $this->getEntityRepository()->find($this->getEntityIdentifierPrepare($id));
+		if(null !== $entityFinder = $this->getPHPAttribute(EntityFinder::class, $action->name)) {
+			$finder = $entityFinder->finder;
+			$controllerClass = $this->getControllerClass();
+			if (class_exists($finder)) {
+				$classFinder = new $controllerClass();
+				$object = $classFinder($request, $this->serviceContainer);
+			} else {
+				if (method_exists($controllerClass, $finder)) {
+					$object = $controllerClass::$finder($request, $this->serviceContainer);
+				} else {
+					throw new NotFoundHttpException('Invalid Entity Finder. Class or Method not found.');
+				}
+			}
 
-			if (!$object && $this->getEntityClassMetadata()->generatorType !== ClassMetadata::GENERATOR_TYPE_NONE) {
-				throw new NotFoundHttpException('Not Found');
+			if($object && false === is_a($object, $this->getEntity()->getFqcn(), true)) {
+				throw new NotFoundHttpException('Invalid Entity Finder. Method must return an object of the same class.');
+			}
+		} else {
+			if ($id) {
+				$object = $this->getEntityRepository()->find($this->getEntityIdentifierPrepare($id));
 			}
 		}
 
 		if (empty($object)) {
+			if ($this->getEntityClassMetadata()->generatorType !== ClassMetadata::GENERATOR_TYPE_NONE) {
+				throw new NotFoundHttpException('Not Found');
+			}
+
 			if (false !== $object = $this->findEntityObjectByRequest($request, $action)) {
 				if (!is_a($object, $this->getEntity()->getFqcn(), true)) {
 					throw new NotFoundHttpException('Not Found');
