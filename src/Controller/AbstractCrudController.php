@@ -611,8 +611,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 
 		if (empty($object)) {
-			if ($this->getEntityClassMetadata()->generatorType !== ClassMetadata::GENERATOR_TYPE_NONE) {
-				throw new NotFoundHttpException('Not Found');
+			if ($this->getEntityClassMetadata()->generatorType === ClassMetadata::GENERATOR_TYPE_NONE) {
+				throw new Exception('Entity ID Generator is disabled.');
 			}
 
 			if (false !== $object = $this->findEntityObjectByRequest($request, $action)) {
