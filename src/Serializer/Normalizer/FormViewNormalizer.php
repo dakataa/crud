@@ -2,6 +2,7 @@
 
 namespace Dakataa\Crud\Serializer\Normalizer;
 
+use Closure;
 use Doctrine\Common\Collections\ArrayCollection;
 use Symfony\Component\Form\ChoiceList\View\ChoiceGroupView;
 use Symfony\Component\Form\ChoiceList\View\ChoiceView;
@@ -73,6 +74,7 @@ class FormViewNormalizer implements NormalizerInterface, NormalizerAwareInterfac
 			'data' => $data,
 			'choices' => $choices,
 			'multiple' => $multiple,
+			'label' => $label
 		] = $object->vars + ['choices' => null, 'multiple' => false];
 
 		$choices = array_values($choices ?: []) ?: null;
@@ -105,6 +107,10 @@ class FormViewNormalizer implements NormalizerInterface, NormalizerAwareInterfac
 			fn(?string $result, string $type) => $result ?: (in_array($type, static::ORIGINAL_TYPES) ? $type : null)
 		) ?: 'form';
 
+		if($label instanceof Closure) {
+			$label = $label($data);
+		}
+
 		return [
 			'type' => $type,
 			'errors' => $this->normalizer->normalize($errors),
@@ -119,6 +125,7 @@ class FormViewNormalizer implements NormalizerInterface, NormalizerAwareInterfac
 					'choices',
 					'form',
 					'cache_key',
+					'label'
 				])
 			),
 			'data' => $data,
@@ -127,6 +134,7 @@ class FormViewNormalizer implements NormalizerInterface, NormalizerAwareInterfac
 				'prototype' => $this->normalizer->normalize($object->vars['prototype']),
 			] : []),
 			...($choices ? ['choices' => $choices] : []),
+			'label' => $label,
 		];
 	}
 
