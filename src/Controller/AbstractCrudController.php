@@ -37,6 +37,7 @@ use Doctrine\ORM\Mapping\ClassMetadata;
 use Doctrine\ORM\Query\Expr\Join;
 use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ObjectRepository;
+use Doctrine\Persistence\Proxy;
 use Exception;
 use Generator;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -293,12 +294,14 @@ abstract class AbstractCrudController implements CrudControllerInterface
 					break;
 				}
 
-				if (null === $dataObject = $classMetaData->getFieldValue($dataObject, $fieldAlias)) {
+				if (null === $associationDataObject = $classMetaData->getFieldValue($dataObject, $fieldAlias)) {
 					break;
 				}
+
+				$dataObject = $associationDataObject;
 			}
 
-			$result[$column->getField()] = $getValue($dataObject, $fieldAlias ?? $fieldPath, $column);
+			$result[$column->getField()] = $getValue($dataObject, $fieldAlias ?? $column->getField(), $column);
 		}
 
 		return $result;
@@ -587,7 +590,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 		$messages = [];
 
-		if(null !== $entityFinder = $this->getPHPAttribute(EntityFinder::class, $action->name)) {
+		if (null !== $entityFinder = $this->getPHPAttribute(EntityFinder::class, $action->name)) {
 			$finder = $entityFinder->finder;
 			$controllerClass = $this->getControllerClass();
 			if (class_exists($finder)) {
@@ -601,7 +604,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				}
 			}
 
-			if($object && false === is_a($object, $this->getEntity()->getFqcn(), true)) {
+			if ($object && false === is_a($object, $this->getEntity()->getFqcn(), true)) {
 				throw new NotFoundHttpException('Invalid Entity Finder. Method must return an object of the same class.');
 			}
 		} else {
@@ -1324,15 +1327,14 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 		$relationExpressions = [];
 		foreach (
-			$this->buildColumns($viewGroup, includeIdentifier: true) as [
-				'entityAlias' => $entityAlias,
-				'entityField' => $entityField,
-				'relations' => $relations,
-				'type' => $type,
-				'column' => $column,
-				'canSelect' => $canSelect,
-				'nullable' => $nullable,
-		]) {
+			$this->buildColumns($viewGroup, includeIdentifier: true) as ['entityAlias' => $entityAlias,
+			'entityField' => $entityField,
+			'relations' => $relations,
+			'type' => $type,
+			'column' => $column,
+			'canSelect' => $canSelect,
+			'nullable' => $nullable,]
+		) {
 			$queryEntityField = sprintf('%s.%s', $entityAlias, $entityField);
 			$value = $filters[$column->getAlias()] ?? null;
 
