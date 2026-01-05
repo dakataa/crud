@@ -10,6 +10,7 @@ use Dakataa\Crud\Attribute\Navigation\NavigationItemInterface;
 use Dakataa\Crud\Attribute\SearchableOptions;
 use Symfony\Component\Form\FormView;
 use Symfony\Component\Routing\RouterInterface;
+use Symfony\Component\Serializer\Exception\ExceptionInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerAwareInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerAwareTrait;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
@@ -18,26 +19,32 @@ class NavigationNormalizer implements NormalizerInterface, NormalizerAwareInterf
 {
 	use NormalizerAwareTrait;
 
-	public function __construct(protected RouterInterface $router) {
-
+	public function __construct(protected RouterInterface $router)
+	{
 	}
 
 	/**
-	 * @param NavigationGroup|NavigationItem $object
+	 * @param NavigationGroup|NavigationItem $data
 	 * @param string|null $format
 	 * @param array $context
 	 * @return array
+	 * @throws ExceptionInterface
 	 */
-	public function normalize(mixed $object, ?string $format = null, array $context = []): array
+	public function normalize(mixed $data, ?string $format = null, array $context = []): array
 	{
 		return [
-			'title' => $object->title,
-			'rank' => $object->rank,
-			...($object instanceof NavigationItem ? [
-				'route' => $this->normalizer->normalize($this->router->getRouteCollection()->get($object->getControllerFQCN().'::'.$object->getControllerMethod())),
+			'title' => $data->title,
+			'rank' => $data->rank,
+			...($data instanceof NavigationItem ? [
+				'route' => $this->normalizer->normalize(
+					$this->router->getRouteCollection()->get(
+						$data->getControllerFQCN().'::'.$data->getControllerMethod()
+					)
+				),
 			] : [
-				'items' => array_map(fn(NavigationItem|NavigationGroup $o) => $this->normalize($o, $format, $context), $object->items ?: [])
-			])
+				'items' => array_map(fn(NavigationItem|NavigationGroup $o) => $this->normalize($o, $format, $context),
+					$data->items ?: []),
+			]),
 		];
 	}
 

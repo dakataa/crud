@@ -4,8 +4,8 @@ namespace Dakataa\Crud\Attribute\Enum;
 
 enum EntityColumnViewGroupEnum: string
 {
-	case List = 'List';
-	case View = 'View';
-	case Export = 'Export';
-	case System = 'None';
+	case List = 'list';
+	case View = 'view';
+	case Export = 'export';
+	case System = 'none';
 }

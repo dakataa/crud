@@ -2,7 +2,9 @@
 
 namespace Dakataa\Crud\EventSubscriber;
 
+use Dakataa\Crud\Attribute\LoadAction;
 use Dakataa\Crud\Controller\AbstractCrudController;
+use Dakataa\Crud\Controller\CrudServiceContainer;
 use Dakataa\Crud\Service\ActionCollection;
 use Doctrine\ORM\EntityManagerInterface;
 use ReflectionAttribute;
@@ -21,6 +23,7 @@ use Dakataa\Crud\Twig\TemplateProvider;
 class CrudSubscriber
 {
 	public function __construct(
+		protected CrudServiceContainer $crudServiceContainer,
 		protected FormFactoryInterface $formFactory,
 		protected RouterInterface $router,
 		protected EventDispatcherInterface $dispatcher,
@@ -37,7 +40,7 @@ class CrudSubscriber
 	#[AsEventListener]
 	public function onKernelController(ControllerArgumentsEvent $event): void
 	{
-		if(!is_array($event->getController())) {
+		if (!is_array($event->getController())) {
 			return;
 		}
 
@@ -49,54 +52,28 @@ class CrudSubscriber
 			return;
 		}
 
-		if(null === $action = $this->actionCollection->load($controllerClass, method: $method)->current()) {
+		if (null === $action = $this->actionCollection->load($controllerClass, method: $method)->current()) {
 			return;
 		}
 
+
 		if ($action->getMethod() === $method && is_a($controllerObject, AbstractCrudController::class, true)) {
 			$this->controller = $controllerObject;
+
 			return;
 		}
 
 		$this->controller = new class (
+			get_class($event->getController()[0]),
 			$this,
-			$event,
-			$this->formFactory,
-			$this->router,
-			$this->dispatcher,
-			$this->entityManager,
-			$this->parameterBag,
-			$this->actionCollection,
-			$this->authorizationChecker,
-			$this->templateProvider
+			$event
 		) extends AbstractCrudController {
 
-			protected string $originClassName;
-
 			public function __construct(
+				protected string $originClassName,
 				protected CrudSubscriber $crudSubscriber,
-				protected ControllerArgumentsEvent $controllerEvent,
-				FormFactoryInterface $formFactory,
-				RouterInterface $router,
-				EventDispatcherInterface $dispatcher,
-				EntityManagerInterface $entityManager,
-				ParameterBagInterface $parameterBag,
-				ActionCollection $actionCollection,
-				?AuthorizationCheckerInterface $authorizationChecker = null,
-				?TemplateProvider $templateProvider = null,
+				protected ControllerArgumentsEvent $controllerEvent
 			) {
-				$this->originClassName = get_class($this->controllerEvent->getController()[0]);
-
-				parent::__construct(
-					$formFactory,
-					$router,
-					$dispatcher,
-					$entityManager,
-					$parameterBag,
-					$actionCollection,
-					authorizationChecker: $authorizationChecker,
-					templateProvider: $templateProvider
-				);
 			}
 
 			public function getControllerClass(): string
@@ -104,11 +81,13 @@ class CrudSubscriber
 				return $this->originClassName;
 			}
 
-			protected function getPHPAttributes(string $attributeFQCN, string $method = null): array
+			protected function getPHPAttributes(string $attributeFQCN, string|null $method = null): array
 			{
 				return $this->crudSubscriber->getPHPAttributes($this->controllerEvent, $attributeFQCN);
 			}
 		};
+
+		$this->controller->setServiceContainer($this->crudServiceContainer);
 
 		/** @var IsGranted $attribute */
 		foreach ($event->getAttributes(IsGranted::class) as $attribute) {
@@ -129,11 +108,17 @@ class CrudSubscriber
 			}
 		}
 
-		if (!method_exists($this->controller, $action->name)) {
+		/** @var LoadAction $loadAction */
+		$loadAction = current($event->getAttributes(LoadAction::class));
+		if (!$loadAction) {
+			throw new \Exception('LoadAction Attribute not found');
+		}
+
+		if (!method_exists($this->controller, $loadAction->name)) {
 			return;
 		}
 
-		$event->setController([$this->controller, $action->name], $event->getAttributes());
+		$event->setController([$this->controller, $loadAction->name], $event->getAttributes());
 	}
 
 	public function getPHPAttributes(ControllerArgumentsEvent $controllerEvent, string $attributeClass): array

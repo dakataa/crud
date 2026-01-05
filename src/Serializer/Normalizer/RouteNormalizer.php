@@ -12,19 +12,19 @@ class RouteNormalizer implements NormalizerInterface, NormalizerAwareInterface
 	use NormalizerAwareTrait;
 
 	/**
-	 * @param Route $object
+	 * @param Route $data
 	 * @param string|null $format
 	 * @param array $context
 	 * @return array
 	 */
-	public function normalize(mixed $object, ?string $format = null, array $context = []): array
+	public function normalize(mixed $data, ?string $format = null, array $context = []): array
 	{
 		return [
-			'path' => $object->getPath(),
-			'methods' => $object->getMethods(),
-			'variables' => $object->compile()->getVariables(),
-			'defaults' => array_intersect_key($object->getDefaults(), array_flip($object->compile()->getVariables())),
-			'requirements' => $object->getRequirements()
+			'path' => $data->getPath(),
+			'methods' => $data->getMethods(),
+			'variables' => $data->compile()->getVariables(),
+			'defaults' => array_intersect_key($data->getDefaults(), array_flip($data->compile()->getVariables())),
+			'requirements' => $data->getRequirements()
 		];
 	}
 

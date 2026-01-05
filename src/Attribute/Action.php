@@ -3,9 +3,11 @@
 namespace Dakataa\Crud\Attribute;
 
 use Attribute;
+use Dakataa\Crud\Attribute\Enum\ActionVisibilityEnum;
+use Symfony\Component\ExpressionLanguage\Expression;
 use Symfony\Component\Routing\Attribute\Route;
 
-#[Attribute(Attribute::TARGET_METHOD | Attribute::TARGET_CLASS)]
+#[Attribute(Attribute::TARGET_METHOD | Attribute::TARGET_CLASS | Attribute::IS_REPEATABLE)]
 class Action
 {
 	private ?string $method = null;
@@ -14,10 +16,11 @@ class Action
 		public ?string $name = null,
 		public ?string $title = null,
 		public ?Route $route = null,
-		public ?bool $object = false,
 		public ?string $namespace = null,
 		public ?string $entity = null,
-		public ?array $options = null
+		public ?array $options = null,
+		public ?ActionVisibilityEnum $visibility = ActionVisibilityEnum::List,
+		public null|string|Expression $permission = null
 	) {
 	}
 
@@ -41,18 +44,6 @@ class Action
 	public function setTitle(?string $title): Action
 	{
 		$this->title = $title;
-
-		return $this;
-	}
-
-	public function getObject(): ?bool
-	{
-		return $this->object;
-	}
-
-	public function setObject(?bool $object): Action
-	{
-		$this->object = $object;
 
 		return $this;
 	}
@@ -100,6 +91,30 @@ class Action
 	public function setMethod(?string $method): Action
 	{
 		$this->method = $method;
+
+		return $this;
+	}
+
+	public function getVisibility(): ?ActionVisibilityEnum
+	{
+		return $this->visibility;
+	}
+
+	public function setVisibility(?ActionVisibilityEnum $visibility): Action
+	{
+		$this->visibility = $visibility;
+
+		return $this;
+	}
+
+	public function getPermission(): Expression|string|null
+	{
+		return $this->permission;
+	}
+
+	public function setPermission(Expression|string|null $permission): Action
+	{
+		$this->permission = $permission;
 
 		return $this;
 	}

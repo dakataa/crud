@@ -8,19 +8,20 @@ use Attribute;
 class PathParameterToFieldMap
 {
 	public function __construct(
-		protected string $pathParameter,
-		protected string $field
+		protected string $parameter,
+		protected string $field,
+		protected bool $required = true
 	) {
 	}
 
-	public function getPathParameter(): string
+	public function getParameter(): string
 	{
-		return $this->pathParameter;
+		return $this->parameter;
 	}
 
-	public function setPathParameter(string $pathParameter): PathParameterToFieldMap
+	public function setParameter(string $parameter): PathParameterToFieldMap
 	{
-		$this->pathParameter = $pathParameter;
+		$this->parameter = $parameter;
 
 		return $this;
 	}
@@ -37,5 +38,16 @@ class PathParameterToFieldMap
 		return $this;
 	}
 
+	public function isRequired(): bool
+	{
+		return $this->required;
+	}
+
+	public function setRequired(bool $required): PathParameterToFieldMap
+	{
+		$this->required = $required;
+
+		return $this;
+	}
 
 }

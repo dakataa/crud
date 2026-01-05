@@ -8,6 +8,7 @@ use Dakataa\Crud\Enum\SortTypeEnum;
 use Dakataa\Crud\Utils\StringHelper;
 use Stringable;
 use Symfony\Component\DependencyInjection\Container;
+use Symfony\Component\ExpressionLanguage\Expression;
 
 #[Attribute(Attribute::TARGET_CLASS | Attribute::TARGET_METHOD | Attribute::IS_REPEATABLE)]
 class Column
@@ -22,16 +23,18 @@ class Column
 		protected EntityColumnViewGroupEnum|string|null|false $group = null,
 		protected int|float|string|Stringable|null $value = null,
 		protected SearchableOptions|bool|null $searchable = null,
+		protected bool $visible = true,
 		protected bool|SortTypeEnum $sortable = true,
 		protected array $options = [],
 		protected string|array|null $roles = null,
+		protected null|string|Expression $permission = null,
 		protected bool $identifier = false
 	) {
 	}
 
 	public function getAlias(): string
 	{
-		return lcfirst(Container::camelize(str_replace('.', '_', $this->getField())));
+		return lcfirst(str_replace('.', '_', Container::camelize($this->getField())));
 	}
 
 	public function getField(): string
@@ -48,9 +51,9 @@ class Column
 
 	public function getLabel(): ?string
 	{
-		$label = explode('.', $this->label ?: $this->field);
+		$label = $this->label ?: $this->field;
 
-		return StringHelper::titlize(Container::camelize(ucfirst(array_pop($label))));
+		return StringHelper::titlize($label);
 	}
 
 	public function setLabel(?string $label): Column
@@ -132,6 +135,18 @@ class Column
 		return $this;
 	}
 
+	public function isVisible(): bool
+	{
+		return $this->visible;
+	}
+
+	public function setVisible(bool $visible): Column
+	{
+		$this->visible = $visible;
+
+		return $this;
+	}
+
 	public function getOptions(): array
 	{
 		return $this->options;
@@ -193,6 +208,18 @@ class Column
 	public function setIdentifier(bool $v): Column
 	{
 		$this->identifier = $v;
+
+		return $this;
+	}
+
+	public function getPermission(): Expression|string|null
+	{
+		return $this->permission;
+	}
+
+	public function setPermission(Expression|string|null $permission): Column
+	{
+		$this->permission = $permission;
 
 		return $this;
 	}

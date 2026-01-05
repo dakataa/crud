@@ -2,26 +2,32 @@
 
 namespace Dakataa\Crud\Serializer\Normalizer;
 
-use Dakataa\Crud\Attribute\Column;
 use Symfony\Component\Form\FormError;
-use Symfony\Component\Form\FormErrorIterator;
-use Symfony\Component\Form\FormView;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 class FormErrorNormalizer implements NormalizerInterface
 {
 	/**
-	 * @param FormError $object
+	 * @param FormError $data
 	 * @param string|null $format
 	 * @param array $context
 	 * @return array
 	 */
-	public function normalize(mixed $object, ?string $format = null, array $context = []): array
+	public function normalize(mixed $data, ?string $format = null, array $context = []): array
 	{
+		$names = [$data->getOrigin()->getName()];
+		$parent = $data->getOrigin()->getParent();
+		while($parent) {
+			$names[] = $parent->getName();
+			$parent = $parent->getParent();
+		}
+		$names = array_reverse($names);
+		$origin = array_shift($names) . implode('', array_map(fn($n) => '[' . $n . ']', $names));
 		return [
-			'message' => $object->getMessage(),
-			'messageTemplate' => $object->getMessageTemplate(),
-			'messageParameters' => $object->getMessageParameters()
+			'origin' => $origin,
+			'message' => $data->getMessage(),
+			'messageTemplate' => $data->getMessageTemplate(),
+			'messageParameters' => $data->getMessageParameters()
 		];
 	}
 

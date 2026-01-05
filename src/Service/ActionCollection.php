@@ -51,9 +51,6 @@ class ActionCollection
 
 		$controllerReflectionClass = new ReflectionClass($controllerFQCN);
 		$controllerEntityFQCN = ($controllerReflectionClass->getAttributes(Entity::class)[0] ?? null)?->getArguments()[0] ?? null;
-		if(null === $controllerEntityFQCN) {
-			return;
-		}
 
 		$isAccessGranted = function (ReflectionClass|ReflectionMethod $reflection): bool {
 			/** @var IsGranted[] $isGrantedAttributes */
@@ -63,7 +60,10 @@ class ActionCollection
 			);
 
 			foreach ($isGrantedAttributes as $isGrantedAttribute) {
-				if (!$this->authorizationChecker->isGranted($isGrantedAttribute->attribute, $isGrantedAttribute->subject)) {
+				if (!$this->authorizationChecker->isGranted(
+					$isGrantedAttribute->attribute,
+					$isGrantedAttribute->subject
+				)) {
 					return false;
 				}
 			}
@@ -71,29 +71,29 @@ class ActionCollection
 			return true;
 		};
 
-		if(!$isAccessGranted($controllerReflectionClass)) {
-			return;
-		}
+//		if (!$isAccessGranted($controllerReflectionClass)) {
+//			return;
+//		}
 
-		$controllerReplacementActions = $controllerReflectionClass->getAttributes(Action::class);
+		$controllerReplacementActions = array_map(fn(ReflectionAttribute $attribute) => $attribute->newInstance(), $controllerReflectionClass->getAttributes(Action::class));
 
 		foreach ($controllerReflectionClass->getMethods(ReflectionMethod::IS_PUBLIC) as $reflectionMethod) {
 			$methodEntityFQCN = (($reflectionMethod->getAttributes(Entity::class)[0] ?? null)?->getArguments()[0] ?? null) ?: $controllerEntityFQCN;
-			if(null === $methodEntityFQCN) {
+			if (null === $methodEntityFQCN) {
 				continue;
 			}
 
-			if($entityFCQN && $entityFCQN !== $methodEntityFQCN) {
+			if ($entityFCQN && $entityFCQN !== $methodEntityFQCN) {
 				continue;
 			}
 
-			if($method && $method !== $reflectionMethod->name) {
+			if ($method && $method !== $reflectionMethod->name) {
 				continue;
 			}
 
-			if(!$isAccessGranted($reflectionMethod)) {
-				continue;
-			}
+//			if (!$isAccessGranted($reflectionMethod)) {
+//				continue;
+//			}
 
 			$entity = lcfirst((new ReflectionClass($methodEntityFQCN))->getShortName());
 
@@ -101,7 +101,7 @@ class ActionCollection
 			$routeAttribute = ($reflectionMethod->getAttributes(Route::class)[0] ?? null)?->newInstance();
 
 			$routeName = $routeAttribute?->getName() ?: ($controllerReflectionClass->name.'::'.$reflectionMethod->name);
-			if(null !== $route = $this->router->getRouteCollection()->get($routeName)) {
+			if (null !== $route = $this->router->getRouteCollection()->get($routeName)) {
 				$routeAttribute = new Route($route->getPath(), $routeName, methods: $route->getMethods());
 			}
 
@@ -109,16 +109,17 @@ class ActionCollection
 				/** @var Action $actionInstance */
 				$actionInstance = $reflectionAttribute->newInstance();
 				$name = $actionInstance->name ?: $reflectionMethod->name;
-				$replacementActionReflectionAttribute = array_values(
+
+				$actionInstance = array_values(
 					array_filter(
 						$controllerReplacementActions,
-						fn(ReflectionAttribute $refAttribute) => $refAttribute->getArguments()[0] === $name
+						fn(Action $action) => $action->getName() === $name
 					)
-				)[0] ?? null;
+				)[0] ?? $actionInstance;
 
-				if($replacementActionReflectionAttribute) {
-					$actionInstance = $replacementActionReflectionAttribute->newInstance();
-				}
+//				if($actionInstance->permission && false === $this->authorizationChecker->isGranted($actionInstance->permission)) {
+//					continue;
+//				}
 
 				$title = ($actionInstance->title ?: StringHelper::titlize(ucfirst($name ?: $reflectionMethod->name)));
 
