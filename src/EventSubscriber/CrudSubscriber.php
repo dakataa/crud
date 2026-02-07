@@ -58,8 +58,6 @@ class CrudSubscriber
 		/** @var LoadAction|bool $loadAction */
 		$loadAction = current($event->getAttributes(LoadAction::class)) ?: new LoadAction($method);
 
-		$this->controller = $controllerObject;
-
 		if (false === is_a($controllerObject, AbstractCrudController::class, true)) {
 			$this->controller = new class (
 				get_class($event->getController()[0]),
@@ -86,6 +84,8 @@ class CrudSubscriber
 			};
 
 			$this->controller->setServiceContainer($this->crudServiceContainer);
+		} else {
+			$this->controller = $controllerObject;
 		}
 
 		if (!method_exists($this->controller, $loadAction->name)) {
