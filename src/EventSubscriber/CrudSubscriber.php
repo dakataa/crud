@@ -45,8 +45,7 @@ class CrudSubscriber
 		}
 
 		[$controllerObject, $method] = $event->getController();
-
-		[$controllerClass] = explode('::', $event->getRequest()->get('_controller'));
+		[$controllerClass] = explode('::', $event->getRequest()->attributes->get('_controller'));
 
 		if (!class_exists($controllerClass)) {
 			return;
@@ -56,38 +55,42 @@ class CrudSubscriber
 			return;
 		}
 
+		/** @var LoadAction|bool $loadAction */
+		$loadAction = current($event->getAttributes(LoadAction::class)) ?: new LoadAction($method);
 
-		if ($action->getMethod() === $method && is_a($controllerObject, AbstractCrudController::class, true)) {
-			$this->controller = $controllerObject;
+		$this->controller = $controllerObject;
 
-			return;
+		if (false === is_a($controllerObject, AbstractCrudController::class, true)) {
+			$this->controller = new class (
+				get_class($event->getController()[0]),
+				$this,
+				$event
+			) extends AbstractCrudController {
+
+				public function __construct(
+					protected string $originClassName,
+					protected CrudSubscriber $crudSubscriber,
+					protected ControllerArgumentsEvent $controllerEvent
+				) {
+				}
+
+				public function getControllerClass(): string
+				{
+					return $this->originClassName;
+				}
+
+				protected function getPHPAttributes(string $attributeFQCN, string|null $method = null): array
+				{
+					return $this->crudSubscriber->getPHPAttributes($this->controllerEvent, $attributeFQCN);
+				}
+			};
+
+			$this->controller->setServiceContainer($this->crudServiceContainer);
 		}
 
-		$this->controller = new class (
-			get_class($event->getController()[0]),
-			$this,
-			$event
-		) extends AbstractCrudController {
-
-			public function __construct(
-				protected string $originClassName,
-				protected CrudSubscriber $crudSubscriber,
-				protected ControllerArgumentsEvent $controllerEvent
-			) {
-			}
-
-			public function getControllerClass(): string
-			{
-				return $this->originClassName;
-			}
-
-			protected function getPHPAttributes(string $attributeFQCN, string|null $method = null): array
-			{
-				return $this->crudSubscriber->getPHPAttributes($this->controllerEvent, $attributeFQCN);
-			}
-		};
-
-		$this->controller->setServiceContainer($this->crudServiceContainer);
+		if (!method_exists($this->controller, $loadAction->name)) {
+			return;
+		}
 
 		/** @var IsGranted $attribute */
 		foreach ($event->getAttributes(IsGranted::class) as $attribute) {
@@ -106,16 +109,6 @@ class CrudSubscriber
 
 				throw $accessDeniedException;
 			}
-		}
-
-		/** @var LoadAction $loadAction */
-		$loadAction = current($event->getAttributes(LoadAction::class));
-		if (!$loadAction) {
-			throw new \Exception('LoadAction Attribute not found');
-		}
-
-		if (!method_exists($this->controller, $loadAction->name)) {
-			return;
 		}
 
 		$event->setController([$this->controller, $loadAction->name], $event->getAttributes());
