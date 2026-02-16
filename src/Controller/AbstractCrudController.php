@@ -174,7 +174,12 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	): array {
 		$additionalEntityFields = [];
 		if (is_array($object)) {
-			if ($object[0]::class === $this->getEntity()->getFqcn()) {
+			$objectClass = $object[0]::class;
+			if($object[0] instanceof Proxy) {
+				$objectClass = get_parent_class($object[0]);
+			}
+
+			if ($objectClass === $this->getEntity()->getFqcn()) {
 				$additionalEntityFields = array_filter(
 					$object,
 					fn(mixed $key) => !is_numeric($key),
