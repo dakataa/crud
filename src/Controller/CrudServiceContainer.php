@@ -2,6 +2,7 @@
 
 namespace Dakataa\Crud\Controller;
 
+use Dakataa\Crud\Serializer\CrudSerializer;
 use Dakataa\Crud\Service\ActionCollection;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
@@ -10,7 +11,6 @@ use Symfony\Component\Form\FormFactoryInterface;
 use Symfony\Component\Routing\RouterInterface;
 use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInterface;
 use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
-use Symfony\Component\Serializer\SerializerInterface;
 
 final class CrudServiceContainer
 {
@@ -21,8 +21,8 @@ final class CrudServiceContainer
 		public EntityManagerInterface $entityManager,
 		public ParameterBagInterface $parameterBag,
 		public ActionCollection $actionCollection,
+		public CrudSerializer $serializer,
 		public ?TokenStorageInterface $tokenStorage = null,
-		public ?SerializerInterface $serializer = null,
 		public ?AuthorizationCheckerInterface $authorizationChecker = null,
 		public ?TemplateProvider $templateProvider = null
 	) {

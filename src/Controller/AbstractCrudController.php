@@ -19,11 +19,6 @@ use Dakataa\Crud\Attribute\PathParameterToFieldMap;
 use Dakataa\Crud\Attribute\QueryParameterToFieldMap;
 use Dakataa\Crud\Attribute\SearchableOptions;
 use Dakataa\Crud\Security\SecuritySubject;
-use Dakataa\Crud\Serializer\Normalizer\ActionNormalizer;
-use Dakataa\Crud\Serializer\Normalizer\ColumnNormalizer;
-use Dakataa\Crud\Serializer\Normalizer\FormErrorNormalizer;
-use Dakataa\Crud\Serializer\Normalizer\FormViewNormalizer;
-use Dakataa\Crud\Serializer\Normalizer\RouteNormalizer;
 use Dakataa\Crud\Twig\TemplateProvider;
 use Dakataa\Crud\Utils\Doctrine\Paginator;
 use Dakataa\Crud\Utils\StringHelper;
@@ -70,12 +65,6 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 use Symfony\Component\Serializer\Exception\ExceptionInterface;
-use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
-use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
-use Symfony\Component\Serializer\Normalizer\AbstractNormalizer;
-use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
-use Symfony\Component\Serializer\Normalizer\DateTimeNormalizer;
-use Symfony\Component\Serializer\Serializer;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Contracts\Service\Attribute\Required;
 use TypeError;
@@ -844,29 +833,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		switch ($format) {
 			case 'json':
 			{
-				$classMetadataFactory = new ClassMetadataFactory(new AttributeLoader);
-				$serializer = new Serializer(
-					[
-						new FormErrorNormalizer,
-						new FormViewNormalizer,
-						new BackedEnumNormalizer,
-						new ColumnNormalizer,
-						new ActionNormalizer($this->serviceContainer->router),
-						new DateTimeNormalizer([
-							DateTimeNormalizer::FORMAT_KEY => 'Y-m-d H:i:s',
-						]),
-						new RouteNormalizer,
-//						new ObjectNormalizer($classMetadataFactory, defaultContext: [
-//							AbstractNormalizer::CIRCULAR_REFERENCE_HANDLER => fn() => null,
-//							AbstractNormalizer::GROUPS => ['view'],
-//						]),
-					]
-				);
-
 				return new JsonResponse(
-					$serializer->normalize($data, context: [
-						AbstractNormalizer::CIRCULAR_REFERENCE_HANDLER => fn() => null,
-					]), $status
+					$this->serviceContainer->serializer->normalize($data), $status
 				);
 			}
 			default:
