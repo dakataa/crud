@@ -2,6 +2,7 @@
 
 namespace Dakataa\Crud\EventSubscriber;
 
+use Dakataa\Crud\Attribute\Action;
 use Dakataa\Crud\Attribute\LoadAction;
 use Dakataa\Crud\Controller\AbstractCrudController;
 use Dakataa\Crud\Controller\CrudServiceContainer;
@@ -12,6 +13,7 @@ use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Form\FormFactoryInterface;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Event\ControllerArgumentsEvent;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\Routing\RouterInterface;
@@ -60,13 +62,13 @@ class CrudSubscriber
 
 		if (false === is_a($controllerObject, AbstractCrudController::class, true)) {
 			$this->controller = new class (
-				get_class($event->getController()[0]),
+				$event->getController()[0],
 				$this,
 				$event
 			) extends AbstractCrudController {
 
 				public function __construct(
-					protected string $originClassName,
+					protected object $originalController,
 					protected CrudSubscriber $crudSubscriber,
 					protected ControllerArgumentsEvent $controllerEvent
 				) {
@@ -74,12 +76,21 @@ class CrudSubscriber
 
 				public function getControllerClass(): string
 				{
-					return $this->originClassName;
+					return get_class($this->originalController);
 				}
 
 				protected function getPHPAttributes(string $attributeFQCN, string|null $method = null): array
 				{
 					return $this->crudSubscriber->getPHPAttributes($this->controllerEvent, $attributeFQCN);
+				}
+
+				public function buildFormTypeOptions(Request $request, Action $action, array $options): array
+				{
+					if(method_exists($this->originalController, 'buildFormTypeOptions')) {
+						return $this->originalController->buildFormTypeOptions($request, $action, $options);
+					}
+
+					return parent::buildFormTypeOptions($request, $action, $options);
 				}
 			};
 
