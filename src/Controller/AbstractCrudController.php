@@ -364,6 +364,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			return $batchForm;
 		}
 
+		$queryViewGroup = $request->query->get('viewGroup');
+		$viewGroup = EntityColumnViewGroupEnum::tryFrom($queryViewGroup ?: 'list') ?: $queryViewGroup ?: EntityColumnViewGroupEnum::List;
 		$sorting = $this->prepareSorting($request);
 		$paginator = new Paginator(
 			$this->createQueryBuilder($request),
@@ -381,10 +383,10 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			'entity' => [
 				'name' => $this->getEntityShortName(),
 				'primaryColumn' => $this->getEntityPrimaryColumn(),
-				'columns' => iterator_to_array($this->getEntityColumns()),
+				'columns' => iterator_to_array($this->getEntityColumns($viewGroup)),
 				'data' => [
 					'items' => array_map(
-						fn(array|object $object) => $this->compileEntityData($request, $object),
+						fn(array|object $object) => $this->compileEntityData($request, $object, $viewGroup),
 						$items
 					),
 					'meta' => $meta,
@@ -515,12 +517,15 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			throw new AccessDeniedException();
 		}
 
+		$queryViewGroup = $request->query->get('viewGroup');
+		$viewGroup = EntityColumnViewGroupEnum::tryFrom($queryViewGroup ?: 'view') ?: $queryViewGroup ?: EntityColumnViewGroupEnum::View;
+
 		return $this->response($request, [
 			'entity' => [
 				'name' => $this->getEntityShortName(),
 				'primaryColumn' => $this->getEntityPrimaryColumn(),
-				'columns' => iterator_to_array($this->getEntityColumns()),
-				'data' => $this->compileEntityData($request, $object, EntityColumnViewGroupEnum::View),
+				'columns' => iterator_to_array($this->getEntityColumns($viewGroup)),
+				'data' => $this->compileEntityData($request, $object, $viewGroup),
 				'acl' => $this->getACLs($request, [$object]),
 			],
 			'title' => $action?->title,
@@ -1479,8 +1484,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		bool|null $searchable = null,
 		bool $includeIdentifier = false
 	): Generator {
-		$viewGroup = (is_string($viewGroup) ? EntityColumnViewGroupEnum::tryFrom($viewGroup) : null) ?: $viewGroup;
-
 		if (empty($this->getEntity()->columns)) {
 			$this->getEntity()->columns = array_map(
 				fn(string $fieldName) => new Column($fieldName),
@@ -1492,7 +1495,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			$this->getEntity()->columns,
 			fn(Column $c) => (
 					!$c->getGroup() ||
-					$c->getGroup() === $viewGroup
+					in_array($viewGroup, $c->getGroup())
 				)
 				&&
 				(

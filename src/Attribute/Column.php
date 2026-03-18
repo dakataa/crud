@@ -20,7 +20,7 @@ class Column
 		protected ?string $placeholder = null,
 		protected ?array $enum = null,
 		protected bool $raw = false,
-		protected EntityColumnViewGroupEnum|string|null|false $group = null,
+		protected EntityColumnViewGroupEnum|string|array|null|false $group = null,
 		protected int|float|string|Stringable|null $value = null,
 		protected SearchableOptions|bool|null $searchable = null,
 		protected bool $visible = true,
@@ -188,9 +188,18 @@ class Column
 		return $this;
 	}
 
-	public function getGroup(): EntityColumnViewGroupEnum|string|null|false
+	public function getGroup(): array|null|false
 	{
-		return (is_string($this->group) ? EntityColumnViewGroupEnum::tryFrom($this->group) : null) ?: $this->group;
+		$group = $this->group;
+		if(is_string($group)) {
+			$group = [$group];
+		}
+
+		if(is_array($group)) {
+			$group = array_filter(array_map(fn(string|EntityColumnViewGroupEnum $g) => (is_string($g) ? (EntityColumnViewGroupEnum::tryFrom($g) ?: $g) : $g), $group)) ?: null;
+		}
+
+		return $group;
 	}
 
 	public function setGroup(?EntityColumnViewGroupEnum $group): Column

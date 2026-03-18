@@ -3,6 +3,7 @@
 namespace Dakataa\Crud\EventSubscriber;
 
 use Dakataa\Crud\Attribute\Action;
+use Dakataa\Crud\Attribute\Column;
 use Dakataa\Crud\Attribute\LoadAction;
 use Dakataa\Crud\Controller\AbstractCrudController;
 use Dakataa\Crud\Controller\CrudServiceContainer;
@@ -53,7 +54,7 @@ class CrudSubscriber
 			return;
 		}
 
-		if (null === $action = $this->actionCollection->load($controllerClass, method: $method)->current()) {
+		if (null === $this->actionCollection->load($controllerClass, method: $method)->current()) {
 			return;
 		}
 
@@ -127,7 +128,7 @@ class CrudSubscriber
 
 	public function getPHPAttributes(ControllerArgumentsEvent $controllerEvent, string $attributeClass): array
 	{
-		$attributes = array_reverse($controllerEvent->getAttributes($attributeClass));
+		$attributes = $controllerEvent->getAttributes($attributeClass);
 		if (!empty($attributes)) {
 			return $attributes;
 		}
