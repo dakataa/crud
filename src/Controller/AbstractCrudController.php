@@ -735,18 +735,21 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	#[Action(visibility: ActionVisibilityEnum::Object)]
 	public function delete(Request $request, int|string $id): Response
 	{
+		$action = $this->getAction($request);
+		if (!$action) {
+			throw new Exception('This Action "delete" is not enabled in the list of Entity Actions.');
+		}
+
 		if ($request->isMethod(Request::METHOD_OPTIONS)) {
 			return new Response;
 		}
 
-		$action = $this->getAction($request);
 		$object = $this->getEntityRepository()->find($this->getEntityIdentifierPrepare($id));
+		if (!$this->isActionAccessGranted($request, $action, $object)) {
+			throw new AccessDeniedException();
+		}
 
 		if ($object) {
-			if ($action?->permission && false === $this->isAccessGranted($action->permission, $object)) {
-				throw new AccessDeniedException();
-			}
-
 			$this->batchDelete($request, [$object]);
 		}
 
@@ -1675,7 +1678,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 	public function getAction(Request $request, string $name = null): ?Action
 	{
-		[, $method] = explode('::', $request->get('_controller'));
+		[, $method] = explode('::', $request->attributes->get('_controller'));
 		$name ??= $method;
 
 		return current(
