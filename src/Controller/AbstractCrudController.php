@@ -19,11 +19,6 @@ use Dakataa\Crud\Attribute\PathParameterToFieldMap;
 use Dakataa\Crud\Attribute\QueryParameterToFieldMap;
 use Dakataa\Crud\Attribute\SearchableOptions;
 use Dakataa\Crud\Security\SecuritySubject;
-use Dakataa\Crud\Serializer\Normalizer\ActionNormalizer;
-use Dakataa\Crud\Serializer\Normalizer\ColumnNormalizer;
-use Dakataa\Crud\Serializer\Normalizer\FormErrorNormalizer;
-use Dakataa\Crud\Serializer\Normalizer\FormViewNormalizer;
-use Dakataa\Crud\Serializer\Normalizer\RouteNormalizer;
 use Dakataa\Crud\Twig\TemplateProvider;
 use Dakataa\Crud\Utils\Doctrine\Paginator;
 use Dakataa\Crud\Utils\StringHelper;
@@ -70,12 +65,6 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 use Symfony\Component\Serializer\Exception\ExceptionInterface;
-use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
-use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
-use Symfony\Component\Serializer\Normalizer\AbstractNormalizer;
-use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
-use Symfony\Component\Serializer\Normalizer\DateTimeNormalizer;
-use Symfony\Component\Serializer\Serializer;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Contracts\Service\Attribute\Required;
 use TypeError;
@@ -185,7 +174,12 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	): array {
 		$additionalEntityFields = [];
 		if (is_array($object)) {
-			if ($object[0]::class === $this->getEntity()->getFqcn()) {
+			$objectClass = $object[0]::class;
+			if($object[0] instanceof Proxy) {
+				$objectClass = get_parent_class($object[0]);
+			}
+
+			if ($objectClass === $this->getEntity()->getFqcn()) {
 				$additionalEntityFields = array_filter(
 					$object,
 					fn(mixed $key) => !is_numeric($key),
@@ -370,6 +364,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			return $batchForm;
 		}
 
+		$queryViewGroup = $request->query->get('viewGroup');
+		$viewGroup = EntityColumnViewGroupEnum::tryFrom($queryViewGroup ?: 'list') ?: $queryViewGroup ?: EntityColumnViewGroupEnum::List;
 		$sorting = $this->prepareSorting($request);
 		$paginator = new Paginator(
 			$this->createQueryBuilder($request),
@@ -387,10 +383,10 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			'entity' => [
 				'name' => $this->getEntityShortName(),
 				'primaryColumn' => $this->getEntityPrimaryColumn(),
-				'columns' => iterator_to_array($this->getEntityColumns()),
+				'columns' => iterator_to_array($this->getEntityColumns($viewGroup)),
 				'data' => [
 					'items' => array_map(
-						fn(array|object $object) => $this->compileEntityData($request, $object),
+						fn(array|object $object) => $this->compileEntityData($request, $object, $viewGroup),
 						$items
 					),
 					'meta' => $meta,
@@ -521,12 +517,15 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			throw new AccessDeniedException();
 		}
 
+		$queryViewGroup = $request->query->get('viewGroup');
+		$viewGroup = EntityColumnViewGroupEnum::tryFrom($queryViewGroup ?: 'view') ?: $queryViewGroup ?: EntityColumnViewGroupEnum::View;
+
 		return $this->response($request, [
 			'entity' => [
 				'name' => $this->getEntityShortName(),
 				'primaryColumn' => $this->getEntityPrimaryColumn(),
-				'columns' => iterator_to_array($this->getEntityColumns()),
-				'data' => $this->compileEntityData($request, $object, EntityColumnViewGroupEnum::View),
+				'columns' => iterator_to_array($this->getEntityColumns($viewGroup)),
+				'data' => $this->compileEntityData($request, $object, $viewGroup),
 				'acl' => $this->getACLs($request, [$object]),
 			],
 			'title' => $action?->title,
@@ -736,18 +735,21 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	#[Action(visibility: ActionVisibilityEnum::Object)]
 	public function delete(Request $request, int|string $id): Response
 	{
+		$action = $this->getAction($request);
+		if (!$action) {
+			throw new Exception('This Action "delete" is not enabled in the list of Entity Actions.');
+		}
+
 		if ($request->isMethod(Request::METHOD_OPTIONS)) {
 			return new Response;
 		}
 
-		$action = $this->getAction($request);
 		$object = $this->getEntityRepository()->find($this->getEntityIdentifierPrepare($id));
+		if (!$this->isActionAccessGranted($request, $action, $object)) {
+			throw new AccessDeniedException();
+		}
 
 		if ($object) {
-			if ($action?->permission && false === $this->isAccessGranted($action->permission, $object)) {
-				throw new AccessDeniedException();
-			}
-
 			$this->batchDelete($request, [$object]);
 		}
 
@@ -844,29 +846,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		switch ($format) {
 			case 'json':
 			{
-				$classMetadataFactory = new ClassMetadataFactory(new AttributeLoader);
-				$serializer = new Serializer(
-					[
-						new FormErrorNormalizer,
-						new FormViewNormalizer,
-						new BackedEnumNormalizer,
-						new ColumnNormalizer,
-						new ActionNormalizer($this->serviceContainer->router),
-						new DateTimeNormalizer([
-							DateTimeNormalizer::FORMAT_KEY => 'Y-m-d H:i:s',
-						]),
-						new RouteNormalizer,
-//						new ObjectNormalizer($classMetadataFactory, defaultContext: [
-//							AbstractNormalizer::CIRCULAR_REFERENCE_HANDLER => fn() => null,
-//							AbstractNormalizer::GROUPS => ['view'],
-//						]),
-					]
-				);
-
 				return new JsonResponse(
-					$serializer->normalize($data, context: [
-						AbstractNormalizer::CIRCULAR_REFERENCE_HANDLER => fn() => null,
-					]), $status
+					$this->serviceContainer->serializer->normalize($data), $status
 				);
 			}
 			default:
@@ -1506,8 +1487,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		bool|null $searchable = null,
 		bool $includeIdentifier = false
 	): Generator {
-		$viewGroup = (is_string($viewGroup) ? EntityColumnViewGroupEnum::tryFrom($viewGroup) : null) ?: $viewGroup;
-
 		if (empty($this->getEntity()->columns)) {
 			$this->getEntity()->columns = array_map(
 				fn(string $fieldName) => new Column($fieldName),
@@ -1519,7 +1498,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			$this->getEntity()->columns,
 			fn(Column $c) => (
 					!$c->getGroup() ||
-					$c->getGroup() === $viewGroup
+					in_array($viewGroup, $c->getGroup())
 				)
 				&&
 				(
@@ -1699,7 +1678,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 	public function getAction(Request $request, string $name = null): ?Action
 	{
-		[, $method] = explode('::', $request->get('_controller'));
+		[, $method] = explode('::', $request->attributes->get('_controller'));
 		$name ??= $method;
 
 		return current(

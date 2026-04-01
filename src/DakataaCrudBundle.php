@@ -9,6 +9,7 @@ use Dakataa\Crud\Command\MakerController;
 use Dakataa\Crud\Controller\CrudServiceContainer;
 use Dakataa\Crud\Controller\GeneralController;
 use Dakataa\Crud\EventSubscriber\CrudSubscriber;
+use Dakataa\Crud\Serializer\CrudSerializer;
 use Dakataa\Crud\Service\ActionCollection;
 use Dakataa\Crud\Service\Navigation;
 use Dakataa\Crud\Service\RouteCollection;
@@ -46,6 +47,12 @@ class DakataaCrudBundle extends AbstractBundle
 		$container
 			->services()
 			->set(ActionCollection::class, ActionCollection::class)
+			->autowire()
+			->autoconfigure();
+
+		$container
+			->services()
+			->set(CrudSerializer::class, CrudSerializer::class)
 			->autowire()
 			->autoconfigure();
 

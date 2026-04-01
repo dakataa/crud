@@ -2,6 +2,8 @@
 
 namespace Dakataa\Crud\EventSubscriber;
 
+use Dakataa\Crud\Attribute\Action;
+use Dakataa\Crud\Attribute\Column;
 use Dakataa\Crud\Attribute\LoadAction;
 use Dakataa\Crud\Controller\AbstractCrudController;
 use Dakataa\Crud\Controller\CrudServiceContainer;
@@ -12,6 +14,7 @@ use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Form\FormFactoryInterface;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Event\ControllerArgumentsEvent;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\Routing\RouterInterface;
@@ -45,49 +48,61 @@ class CrudSubscriber
 		}
 
 		[$controllerObject, $method] = $event->getController();
-
-		[$controllerClass] = explode('::', $event->getRequest()->get('_controller'));
+		[$controllerClass] = explode('::', $event->getRequest()->attributes->get('_controller'));
 
 		if (!class_exists($controllerClass)) {
 			return;
 		}
 
-		if (null === $action = $this->actionCollection->load($controllerClass, method: $method)->current()) {
+		if (null === $this->actionCollection->load($controllerClass, method: $method)->current()) {
 			return;
 		}
 
+		/** @var LoadAction|bool $loadAction */
+		$loadAction = current($event->getAttributes(LoadAction::class)) ?: new LoadAction($method);
 
-		if ($action->getMethod() === $method && is_a($controllerObject, AbstractCrudController::class, true)) {
+		if (false === is_a($controllerObject, AbstractCrudController::class, true)) {
+			$this->controller = new class (
+				$event->getController()[0],
+				$this,
+				$event
+			) extends AbstractCrudController {
+
+				public function __construct(
+					protected object $originalController,
+					protected CrudSubscriber $crudSubscriber,
+					protected ControllerArgumentsEvent $controllerEvent
+				) {
+				}
+
+				public function getControllerClass(): string
+				{
+					return get_class($this->originalController);
+				}
+
+				protected function getPHPAttributes(string $attributeFQCN, string|null $method = null): array
+				{
+					return $this->crudSubscriber->getPHPAttributes($this->controllerEvent, $attributeFQCN);
+				}
+
+				public function buildFormTypeOptions(Request $request, Action $action, array $options): array
+				{
+					if(method_exists($this->originalController, 'buildFormTypeOptions')) {
+						return $this->originalController->buildFormTypeOptions($request, $action, $options);
+					}
+
+					return parent::buildFormTypeOptions($request, $action, $options);
+				}
+			};
+
+			$this->controller->setServiceContainer($this->crudServiceContainer);
+		} else {
 			$this->controller = $controllerObject;
-
-			return;
 		}
 
-		$this->controller = new class (
-			get_class($event->getController()[0]),
-			$this,
-			$event
-		) extends AbstractCrudController {
-
-			public function __construct(
-				protected string $originClassName,
-				protected CrudSubscriber $crudSubscriber,
-				protected ControllerArgumentsEvent $controllerEvent
-			) {
-			}
-
-			public function getControllerClass(): string
-			{
-				return $this->originClassName;
-			}
-
-			protected function getPHPAttributes(string $attributeFQCN, string|null $method = null): array
-			{
-				return $this->crudSubscriber->getPHPAttributes($this->controllerEvent, $attributeFQCN);
-			}
-		};
-
-		$this->controller->setServiceContainer($this->crudServiceContainer);
+		if (!method_exists($this->controller, $loadAction->name)) {
+			return;
+		}
 
 		/** @var IsGranted $attribute */
 		foreach ($event->getAttributes(IsGranted::class) as $attribute) {
@@ -108,22 +123,12 @@ class CrudSubscriber
 			}
 		}
 
-		/** @var LoadAction $loadAction */
-		$loadAction = current($event->getAttributes(LoadAction::class));
-		if (!$loadAction) {
-			throw new \Exception('LoadAction Attribute not found');
-		}
-
-		if (!method_exists($this->controller, $loadAction->name)) {
-			return;
-		}
-
 		$event->setController([$this->controller, $loadAction->name], $event->getAttributes());
 	}
 
 	public function getPHPAttributes(ControllerArgumentsEvent $controllerEvent, string $attributeClass): array
 	{
-		$attributes = array_reverse($controllerEvent->getAttributes($attributeClass));
+		$attributes = $controllerEvent->getAttributes($attributeClass);
 		if (!empty($attributes)) {
 			return $attributes;
 		}
