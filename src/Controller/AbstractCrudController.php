@@ -169,7 +169,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		$additionalEntityFields = [];
 		if (is_array($object)) {
 			$objectClass = $object[0]::class;
-			if($object[0] instanceof Proxy) {
+			if ($object[0] instanceof Proxy) {
 				$objectClass = get_parent_class($object[0]);
 			}
 
@@ -659,8 +659,11 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			if ($form->isSubmitted() && $form->isValid() && $save) {
 				$this->beforeFormSave($request, $form);
 
-				$this->serviceContainer->entityManager->persist($form->getData());
-				$this->serviceContainer->entityManager->flush();
+				if ($this->getEntity()) {
+					$this->serviceContainer->entityManager->persist($form->getData());
+					$this->serviceContainer->entityManager->flush();
+				}
+
 				$object = $form->getData();
 
 				$this->afterFormSave($request, $form);
@@ -1439,12 +1442,12 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return $query;
 	}
 
-	public function getEntityIdentifierValueFromObject(mixed $object): string
+	public function getEntityIdentifierValueFromObject(mixed $object): string|null
 	{
-		return implode(
+		return is_object($object) ? implode(
 			self::COMPOSITE_IDENTIFIER_SEPARATOR,
 			$this->serviceContainer->entityManager->getUnitOfWork()->getEntityIdentifier($object)
-		);
+		) : null;
 	}
 
 	public function getEntityIdentifierPrepare(mixed $id): array
@@ -1540,7 +1543,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 	public function getEntityClassMetadata(): ClassMetadata
 	{
-		if(!$this->getEntity()) {
+		if (!$this->getEntity()) {
 			throw new Exception('Entity not set.');
 		}
 
