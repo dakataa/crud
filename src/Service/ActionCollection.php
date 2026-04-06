@@ -20,7 +20,7 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
 class ActionCollection
 {
 	public function __construct(
-		#[AutowireLocator('dakataa.crud.entity')]
+		#[AutowireLocator('dakataa.crud.action')]
 		private readonly ServiceLocator $handlers,
 		protected RouterInterface $router,
 		protected AuthorizationCheckerInterface $authorizationChecker
@@ -78,12 +78,9 @@ class ActionCollection
 		$controllerReplacementActions = array_map(fn(ReflectionAttribute $attribute) => $attribute->newInstance(), $controllerReflectionClass->getAttributes(Action::class));
 
 		foreach ($controllerReflectionClass->getMethods(ReflectionMethod::IS_PUBLIC) as $reflectionMethod) {
-			$methodEntityFQCN = (($reflectionMethod->getAttributes(Entity::class)[0] ?? null)?->getArguments()[0] ?? null) ?: $controllerEntityFQCN;
-			if (null === $methodEntityFQCN) {
-				continue;
-			}
+			$entityFQCN = (($reflectionMethod->getAttributes(Entity::class)[0] ?? null)?->getArguments()[0] ?? null) ?: $controllerEntityFQCN;
 
-			if ($entityFCQN && $entityFCQN !== $methodEntityFQCN) {
+			if ($entityFCQN && $entityFCQN !== $entityFQCN) {
 				continue;
 			}
 
@@ -95,7 +92,7 @@ class ActionCollection
 //				continue;
 //			}
 
-			$entity = lcfirst((new ReflectionClass($methodEntityFQCN))->getShortName());
+			$entity = $entityFQCN ? lcfirst((new ReflectionClass($entityFQCN))->getShortName()) : null;
 
 			/** @var Route $routeAttribute */
 			$routeAttribute = ($reflectionMethod->getAttributes(Route::class)[0] ?? null)?->newInstance();

@@ -8,7 +8,7 @@ use Dakataa\Crud\Attribute\EntityType;
 interface CrudControllerInterface
 {
 
-	public function getEntity(): Entity;
+	public function getEntity(): Entity|null;
 
 	public function getEntityType(): ?EntityType;
 

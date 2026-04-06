@@ -3,7 +3,6 @@
 namespace Dakataa\Crud\EventSubscriber;
 
 use Dakataa\Crud\Attribute\Action;
-use Dakataa\Crud\Attribute\Column;
 use Dakataa\Crud\Attribute\LoadAction;
 use Dakataa\Crud\Controller\AbstractCrudController;
 use Dakataa\Crud\Controller\CrudServiceContainer;

@@ -137,14 +137,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 	}
 
-	final public function getEntity(): Entity
+	final public function getEntity(): Entity|null
 	{
-		if (!$this->entity) {
-			throw new Exception(
-				'Invalid CRUD Entity Class. Add PHP Attribute "Dakataa\Crud\Attribute\Entity" or extend getEntity method.'
-			);
-		}
-
 		return $this->entity;
 	}
 
@@ -588,6 +582,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 
 		$messages = [];
+		$object = null;
 
 		if (null !== $entityFinder = $this->getPHPAttribute(EntityFinder::class, $action->name)) {
 			$finder = $entityFinder->finder;
@@ -612,7 +607,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			}
 		}
 
-		if (empty($object)) {
+		if ($this->getEntity() && empty($object)) {
 			if ($this->getEntityClassMetadata()->generatorType === ClassMetadata::GENERATOR_TYPE_NONE) {
 				throw new Exception('Entity ID Generator is disabled.');
 			}
@@ -1545,6 +1540,10 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 	public function getEntityClassMetadata(): ClassMetadata
 	{
+		if(!$this->getEntity()) {
+			throw new Exception('Entity not set.');
+		}
+
 		if (!$this->entityClassMetadata) {
 			$this->entityClassMetadata = $this->serviceContainer->entityManager->getClassMetadata(
 				$this->getEntity()->getFqcn()
@@ -1552,28 +1551,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 
 		return $this->entityClassMetadata;
-	}
-
-	public function getEntityColumnToFieldMapping(): array
-	{
-		return array_merge(
-			array_combine(
-				$this->getEntityClassMetadata()->getColumnNames(),
-				$this->getEntityClassMetadata()->getFieldNames()
-			),
-			array_reduce(
-				$this->getEntityClassMetadata()->getAssociationNames(),
-				function (array $result, $associationName) {
-					$association = $this->getEntityClassMetadata()->getAssociationMapping($associationName);
-					foreach ($association['joinColumns'] ?? [] as $joinColumn) {
-						$result[$joinColumn['name']] = $associationName;
-					}
-
-					return $result;
-				},
-				[]
-			)
-		);
 	}
 
 	/**
@@ -1606,7 +1583,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return $options;
 	}
 
-	protected function onFormTypeCreate(Request $request, Action $action, FormInterface $type, object $object)
+	protected function onFormTypeCreate(Request $request, Action $action, FormInterface $type, object|null $object)
 	{
 	}
 
@@ -1661,12 +1638,12 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				iterator_to_array(
 					$this->serviceContainer->actionCollection->load(
 						$this->getControllerClass(),
-						$this->getEntity()->getFqcn()
+						$this->getEntity()?->getFqcn()
 					)
 				),
-				fn(Action $action) => null === $this->getEntity()->getActions() || in_array(
+				fn(Action $action) => null === $this->getEntity()?->getActions() || in_array(
 						$action->getName(),
-						$this->getEntity()->getActions()
+						$this->getEntity()?->getActions()
 					)
 			),
 			fn(Action $action) => !$onlyVisible || ($this->isActionVisible(

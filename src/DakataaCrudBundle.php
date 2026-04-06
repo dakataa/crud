@@ -3,6 +3,7 @@
 namespace Dakataa\Crud;
 
 use Dakataa\Crud\Attribute\Entity;
+use Dakataa\Crud\Attribute\LoadAction;
 use Dakataa\Crud\Attribute\Navigation\NavigationGroup;
 use Dakataa\Crud\Attribute\Navigation\NavigationItem;
 use Dakataa\Crud\Command\MakerController;
@@ -92,7 +93,21 @@ class DakataaCrudBundle extends AbstractBundle
 				Entity $attribute,
 				ReflectionClass|ReflectionMethod $reflector
 			): void {
-				$definition->addTag('dakataa.crud.entity');
+				$definition
+					->addTag('dakataa.crud.entity')
+					->addTag('dakataa.crud.action')
+				;
+			}
+		);
+
+		$builder->registerAttributeForAutoconfiguration(
+			LoadAction::class,
+			static function (
+				ChildDefinition $definition,
+				LoadAction $attribute,
+				ReflectionMethod $reflector
+			): void {
+				$definition->addTag('dakataa.crud.action');
 			}
 		);
 
