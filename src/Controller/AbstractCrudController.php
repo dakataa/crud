@@ -970,6 +970,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				$formFieldKey = $column->getAlias();
 				$columnOptions = [
 					'label' => $column->getLabel(),
+					'required' => false,
 				];
 
 				$entityType = $type ?? TextType::class;
