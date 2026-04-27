@@ -85,7 +85,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	const COMPOSITE_IDENTIFIER_SEPARATOR = '-';
 
 	protected ?Entity $entity = null;
-	protected ?array $entityType = null;
 	protected ?ClassMetadata $entityClassMetadata = null;
 	protected ?array $actions = null;
 
@@ -144,16 +143,14 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 	public function getEntityType(Action $action = null): ?EntityType
 	{
-		if (!$this->entityType) {
-			$this->entityType = $this->getPHPAttributes(EntityType::class, $action->name) ?: $this->getPHPAttributes(
-				EntityType::class
-			);
-		}
+		$entityType = $this->getPHPAttributes(EntityType::class, $action?->name) ?: $this->getPHPAttributes(
+			EntityType::class
+		);
 
 		return current(
 			array_values(
 				array_filter(
-					$this->entityType,
+					$entityType,
 					fn(EntityType $t) => in_array($t->action, [$action?->name, null])
 				)
 			)
