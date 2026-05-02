@@ -62,6 +62,7 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\HttpKernel\Attribute\MapQueryParameter;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 use Symfony\Component\Serializer\Exception\ExceptionInterface;
@@ -279,7 +280,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 					break;
 				}
 
-				if (null === $associationDataObject = $classMetaData->getFieldValue($dataObject, $fieldAlias)) {
+				$accessor = PropertyAccess::createPropertyAccessor();
+				$associationDataObject = $accessor->getValue($dataObject, $fieldAlias);
+				if (null === $associationDataObject) {
 					break;
 				}
 
