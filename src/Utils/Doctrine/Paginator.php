@@ -21,8 +21,7 @@ class Paginator
 	{
 		$this->query
 			->setFirstResult($this->getOffset())
-			->setMaxResults($this->maxResults)
-		;
+			->setMaxResults($this->maxResults);
 
 		return $this->ormPaginator ?: $this->ormPaginator = new ORMPaginator($this->query);
 	}
@@ -66,13 +65,20 @@ class Paginator
 		return $this->getORMPaginator()->count();
 	}
 
-	public function getLinks(int $maxShownPages = 5): array
+	public function getLinks(int $maxVisiblePages = 5): array
 	{
-		$halfOfShown = round($maxShownPages / 2);
-		$start = min($this->page, max($this->getTotalPages() - $maxShownPages, 1));
-		$end = min(($this->page + $maxShownPages), $this->getTotalPages());
+		$maxVisiblePages = max(3, $maxVisiblePages);
+		$totalPages = $this->getTotalPages();
+		if ($totalPages < 2) {
+			return [];
+		}
 
-		return range(max(($start - $halfOfShown), 1), $end);
+		$halfOfShown = ceil($maxVisiblePages / 2);
+
+		$start = max($this->page - 1, $this->page - $halfOfShown);
+		$end = min(($this->page + $halfOfShown), $totalPages);
+
+		return range(max($start, 1), $end);
 	}
 
 
@@ -81,7 +87,7 @@ class Paginator
 		return $this->getORMPaginator()->getIterator();
 	}
 
-	public function paginate(): array
+	public function paginate(int $maxShownPages = 5): array
 	{
 		return [
 			'items' => $this->getResults(),
@@ -89,8 +95,9 @@ class Paginator
 				'page' => $this->getPage(),
 				'totalPages' => $this->getTotalPages(),
 				'totalResults' => $this->count(),
-				'links' => $this->getLinks(),
+				'links' => $this->getLinks($maxShownPages),
 				'maxResults' => $this->getMaxResults(),
+				'maxShownPages' => $maxShownPages,
 			],
 		];
 	}

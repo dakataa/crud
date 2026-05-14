@@ -80,7 +80,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	const EXPORT_CSV = 'csv';
 	const EXPORT_HTML = 'html';
 
-	const RESULTS_LIMIT_DEFAULT = 5;
+	const RESULTS_LIMIT_DEFAULT = 10;
 	const RESULTS_LIMIT_MAX = 100;
 
 	const COMPOSITE_IDENTIFIER_SEPARATOR = '-';
