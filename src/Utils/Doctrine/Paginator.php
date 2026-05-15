@@ -8,13 +8,21 @@ use Doctrine\ORM\Tools\Pagination\Paginator as ORMPaginator;
 
 class Paginator
 {
+	const DEFAULT_VISIBLE_PAGES = 5;
+
+	const DEFAULT_HARD_MAX_RESULTS = 50;
+
 	protected ?ORMPaginator $ormPaginator = null;
+
+	protected ?int $maxResults = null;
 
 	public function __construct(
 		protected QueryBuilder $query,
 		protected int $page = 1,
-		protected ?int $maxResults = null
+		?int $maxResults = null,
+		protected int $hardMaxResults = self::DEFAULT_HARD_MAX_RESULTS
 	) {
+		$this->setMaxResults($maxResults);
 	}
 
 	protected function getORMPaginator(): ORMPaginator
@@ -28,7 +36,7 @@ class Paginator
 
 	public function setMaxResults(?int $maxResults): static
 	{
-		$this->maxResults = $maxResults;
+		$this->maxResults = $maxResults ? min($maxResults, $this->hardMaxResults) : null;
 
 		return $this;
 	}
@@ -65,7 +73,7 @@ class Paginator
 		return $this->getORMPaginator()->count();
 	}
 
-	public function getLinks(int $maxVisiblePages = 5): array
+	public function getLinks(int $maxVisiblePages = self::DEFAULT_VISIBLE_PAGES): array
 	{
 		$maxVisiblePages = max(3, $maxVisiblePages);
 		$totalPages = $this->getTotalPages();
@@ -87,7 +95,7 @@ class Paginator
 		return $this->getORMPaginator()->getIterator();
 	}
 
-	public function paginate(int $maxShownPages = 5): array
+	public function paginate(int $maxVisiblePages = self::DEFAULT_VISIBLE_PAGES): array
 	{
 		return [
 			'items' => $this->getResults(),
@@ -95,9 +103,10 @@ class Paginator
 				'page' => $this->getPage(),
 				'totalPages' => $this->getTotalPages(),
 				'totalResults' => $this->count(),
-				'links' => $this->getLinks($maxShownPages),
+				'links' => $this->getLinks($maxVisiblePages),
 				'maxResults' => $this->getMaxResults(),
-				'maxShownPages' => $maxShownPages,
+				'hardMaxResults' => $this->hardMaxResults,
+				'maxVisiblePages' => $maxVisiblePages,
 			],
 		];
 	}

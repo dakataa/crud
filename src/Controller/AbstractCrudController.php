@@ -80,8 +80,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	const EXPORT_CSV = 'csv';
 	const EXPORT_HTML = 'html';
 
-	const RESULTS_LIMIT_DEFAULT = 10;
-	const RESULTS_LIMIT_MAX = 100;
+	const MAX_RESULTS_LIMIT_DEFAULT = 10;
+	const HARD_MAX_RESULTS_LIMIT = 100;
 
 	const COMPOSITE_IDENTIFIER_SEPARATOR = '-';
 
@@ -366,7 +366,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			$request->query->getInt('page', 1),
 			$this->getEntity()->isPagination() && (count(
 					$this->getEntityClassMetadata()->getIdentifierFieldNames()
-				) === 1) ? $this->prepareMaxResults($request) : null
+				) === 1) ? $this->prepareMaxResults($request) : null,
+			static::HARD_MAX_RESULTS_LIMIT
 		);
 
 		['items' => $items, 'meta' => $meta] = $paginator->paginate();
@@ -1074,14 +1075,12 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	{
 		$limit = ($request->hasSession() ? intval(
 			$request->getSession()->get($this->getAlias().'.limit')
-		) : null) ?: self::RESULTS_LIMIT_DEFAULT;
+		) : null) ?: self::MAX_RESULTS_LIMIT_DEFAULT;
 		$limit = min(
-			self::RESULTS_LIMIT_MAX,
+			self::HARD_MAX_RESULTS_LIMIT,
 			max(
-				self::RESULTS_LIMIT_DEFAULT,
-				round(
-					$request->query->getInt('limit', $limit) / self::RESULTS_LIMIT_DEFAULT
-				) * self::RESULTS_LIMIT_DEFAULT
+				self::MAX_RESULTS_LIMIT_DEFAULT,
+				$request->query->getInt('limit', $limit)
 			)
 		);
 
