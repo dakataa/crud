@@ -1636,23 +1636,25 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 	public function getActions(Request $request, bool $onlyVisible = false): array
 	{
-		return array_filter(
-			$this->actions ?: $this->actions = array_filter(
-				iterator_to_array(
-					$this->serviceContainer->actionCollection->load(
-						$this->getControllerClass(),
-						$this->getEntity()?->getFqcn()
-					)
+		return array_values(
+			array_filter(
+				$this->actions ?: $this->actions = array_filter(
+					iterator_to_array(
+						$this->serviceContainer->actionCollection->load(
+							$this->getControllerClass(),
+							$this->getEntity()?->getFqcn()
+						)
+					),
+					fn(Action $action) => null === $this->getEntity()?->getActions() || in_array(
+							$action->getName(),
+							$this->getEntity()?->getActions()
+						)
 				),
-				fn(Action $action) => null === $this->getEntity()?->getActions() || in_array(
-						$action->getName(),
-						$this->getEntity()?->getActions()
-					)
-			),
-			fn(Action $action) => !$onlyVisible || ($this->isActionVisible(
-						$request,
-						$action
-					) && $this->isActionAccessGranted($request, $action))
+				fn(Action $action) => !$onlyVisible || ($this->isActionVisible(
+							$request,
+							$action
+						) && $this->isActionAccessGranted($request, $action))
+			)
 		);
 	}
 

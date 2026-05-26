@@ -24,7 +24,7 @@ class Column
 		protected int|float|string|Stringable|null $value = null,
 		protected SearchableOptions|bool|null $searchable = null,
 		protected bool $visible = true,
-		protected bool|SortTypeEnum $sortable = true,
+		protected bool|SortTypeEnum $sortable = false,
 		protected array $options = [],
 		protected string|array|null $roles = null,
 		protected null|string|Expression $permission = null,
