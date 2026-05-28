@@ -693,7 +693,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 					];
 
 					$redirect['url'] = $this->serviceContainer->router->generate(
-						$action->getRoute()->name,
+						$action->getRoute()->getName(),
 						$redirect['parameters']
 					);
 
