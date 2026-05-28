@@ -28,6 +28,7 @@ use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\Common\Collections\Order;
 use Doctrine\DBAL\Types\Types;
+use Doctrine\ORM\EntityNotFoundException;
 use Doctrine\ORM\Mapping\ClassMetadata;
 use Doctrine\ORM\Query\Expr\Join;
 use Doctrine\ORM\QueryBuilder;
@@ -692,7 +693,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 					];
 
 					$redirect['url'] = $this->serviceContainer->router->generate(
-						$action->getRoute()->getName(),
+						$action->getRoute()->name,
 						$redirect['parameters']
 					);
 
@@ -1444,10 +1445,14 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 	public function getEntityIdentifierValueFromObject(mixed $object): string|null
 	{
-		return is_object($object) ? implode(
-			self::COMPOSITE_IDENTIFIER_SEPARATOR,
-			$this->serviceContainer->entityManager->getUnitOfWork()->getEntityIdentifier($object)
-		) : null;
+		try {
+			return is_object($object) ? implode(
+				self::COMPOSITE_IDENTIFIER_SEPARATOR,
+				$this->serviceContainer->entityManager->getUnitOfWork()->getEntityIdentifier($object)
+			) : null;
+		} catch (EntityNotFoundException $e) {
+			return null;
+		}
 	}
 
 	public function getEntityIdentifierPrepare(mixed $id): array
