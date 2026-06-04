@@ -11,11 +11,11 @@ class Entity
 	/**
 	 * @param string $fqcn
 	 * @param string $alias
-	 * @param array & Column[]|null $columns
-	 * @param array & JoinColumn[]|null $joins
-	 * @param array & string[]|null $actions
-	 * @param array & EntityGroup[]|null $group
-	 * @param array & EntitySort[]|null $sort
+	 * @param Column[]|null $columns
+	 * @param JoinColumn[]|null $joins
+	 * @param string[]|null $actions
+	 * @param EntityGroup[]|null $group
+	 * @param EntitySort[]|null $sort
 	 * @param bool $pagination
 	 * @param bool $filter
 	 * @param bool $batch

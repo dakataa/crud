@@ -28,7 +28,8 @@ class Column
 		protected array $options = [],
 		protected string|array|null $roles = null,
 		protected null|string|Expression $permission = null,
-		protected bool $identifier = false
+		protected bool $identifier = false,
+		protected bool $useFlatKey = false
 	) {
 	}
 
@@ -188,6 +189,9 @@ class Column
 		return $this;
 	}
 
+	/**
+	 * @return EntityColumnViewGroupEnum[]|string[]|false|null
+	 */
 	public function getGroup(): array|null|false
 	{
 		$group = $this->group;
@@ -229,6 +233,18 @@ class Column
 	public function setPermission(Expression|string|null $permission): Column
 	{
 		$this->permission = $permission;
+
+		return $this;
+	}
+
+	public function isUseFlatKey(): bool
+	{
+		return $this->useFlatKey;
+	}
+
+	public function setUseFlatKey(bool $useFlatKey): Column
+	{
+		$this->useFlatKey = $useFlatKey;
 
 		return $this;
 	}

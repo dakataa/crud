@@ -23,8 +23,9 @@ class ColumnNormalizer implements NormalizerInterface
 			'sortable' => $data->getSortable(),
 			'searchable' => $data->getSearchable() !== false,
 			'identifier' => $data->isIdentifier(),
-			'group' => $data->getGroup() instanceof EntityColumnViewGroupEnum ? $data->getGroup()->name : $data->getGroup(),
+			'group' => $data->getGroup(),
 			'visible' => $data->isVisible(),
+			'useFlatKey' => $data->isUseFlatKey(),
 		];
 	}
 

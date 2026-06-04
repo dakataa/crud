@@ -163,7 +163,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		Request $request,
 		array|object $object,
 		EntityColumnViewGroupEnum|string $viewGroup = null,
-		bool $raw = true
+		bool|null $useFlatKeys = null
 	): array {
 		$additionalEntityFields = [];
 		if (is_array($object)) {
@@ -290,7 +290,54 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				$dataObject = $associationDataObject;
 			}
 
-			$result[$column->getField()] = $getValue($dataObject, $fieldAlias ?? $column->getField(), $column);
+			$value = $getValue($dataObject, $fieldAlias ?? $column->getField(), $column);
+			$columnUseFlatKeys = $useFlatKeys === null ? $column->isUseFlatKey() : $useFlatKeys;
+			if ($columnUseFlatKeys) {
+				if (array_key_exists($column->getField(), $result)) {
+					throw new Exception(
+						sprintf(
+							'Column field "%s" conflicts with another column using "%s" as a scalar key.',
+							$column->getField(),
+							$fieldAlias ?? $column->getField()
+						)
+					);
+				}
+
+				$result[$column->getField()] = $value;
+			} else {
+				$newResult = &$result;
+				foreach ($fieldPath as $index => $fieldAlias) {
+					$isLastField = count($fieldPath) === ($index + 1);
+
+					if (!array_key_exists($fieldAlias, $newResult)) {
+						$newResult[$fieldAlias] = $isLastField ? $value : [];
+					} else {
+						if (!is_array($newResult[$fieldAlias])) {
+							throw new Exception(
+								sprintf(
+									'Column field "%s" conflicts with another column using "%s" as a scalar key.',
+									$column->getField(),
+									$fieldAlias
+								)
+							);
+						}
+					}
+
+					if (is_array($newResult[$fieldAlias])) {
+						if ($isLastField) {
+							throw new Exception(
+								sprintf(
+									'Column field "%s" conflicts with another column using "%s" as a nested key.',
+									$column->getField(),
+									$fieldAlias
+								)
+							);
+						}
+
+						$newResult = &$newResult[$fieldAlias];
+					}
+				}
+			}
 		}
 
 		return $result;
@@ -455,7 +502,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		$rows = [$header];
 		//Rows
 		foreach ($objects as $object) {
-			$rows[] = $this->compileEntityData($request, $object, EntityColumnViewGroupEnum::Export);
+			$rows[] = $this->compileEntityData($request, $object, EntityColumnViewGroupEnum::Export, true);
 		}
 
 		try {
@@ -1482,7 +1529,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	 * @param EntityColumnViewGroupEnum|string|false|null $viewGroup
 	 * @param bool $searchable
 	 * @param bool $includeIdentifier
-	 * @return Generator
+	 * @return Generator<int, Column>
 	 * @throws Exception
 	 */
 	public function getEntityColumns(
@@ -1532,7 +1579,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			$availableColumnFields = [];
 			$primaryEntityColumn = $this->getEntityPrimaryColumn();
 			foreach ($columns as $column) {
-				$column->setIdentifier(in_array($column->getField(), [$primaryEntityColumn->getField()]));
+				$column->setIdentifier($column->getField() === $primaryEntityColumn->getField());
 				$availableColumnFields[] = $column->getField();
 			}
 
