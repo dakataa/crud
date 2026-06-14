@@ -69,6 +69,7 @@ use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 use Symfony\Component\Serializer\Exception\ExceptionInterface;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Contracts\Service\Attribute\Required;
+use Symfony\Contracts\Service\ResetInterface;
 use TypeError;
 
 
@@ -89,8 +90,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	protected ?Entity $entity = null;
 	protected ?ClassMetadata $entityClassMetadata = null;
 	protected ?array $actions = null;
-
-	protected array $forms = [];
 
 	private ?ExpressionLanguage $expressionLanguage = null;
 
@@ -993,92 +992,91 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			return null;
 		}
 
-		if (empty($this->forms['filter'])) {
-			$form = $this->serviceContainer->formFactory->createNamedBuilder(
-				'filter',
-				FormType::class,
-				null,
-				[
-					...($this->serviceContainer->parameterBag->get(
-						'form.type_extension.csrf.enabled'
-					) ? ['csrf_protection' => false] : []),
-				]
-			)->setMethod(Request::METHOD_GET);
+		$formBuilder = $this->serviceContainer->formFactory->createNamedBuilder(
+			'filter',
+			FormType::class,
+			null,
+			[
+				...($this->serviceContainer->parameterBag->get(
+					'form.type_extension.csrf.enabled'
+				) ? ['csrf_protection' => false] : []),
+			]
+		)->setMethod(Request::METHOD_GET);
 
-			foreach ($this->buildColumns(searchable: true) as $columnData) {
-				[
-					'fqcn' => $fqcn,
-					'type' => $type,
-					'column' => $column,
-				] = $columnData;
+		foreach ($this->buildColumns(searchable: true) as $columnData) {
+			[
+				'fqcn' => $fqcn,
+				'type' => $type,
+				'column' => $column,
+			] = $columnData;
 
-				if (false === $column->getSearchable()) {
-					continue;
-				}
-
-				$formFieldKey = $column->getAlias();
-				$columnOptions = [
-					'label' => $column->getLabel(),
-					'required' => false,
-				];
-
-				$entityType = $type ?? TextType::class;
-				if ($column->getSearchable() instanceof SearchableOptions) {
-					$columnOptions = [
-						...$columnOptions,
-						...($column->getSearchable()->getOptions() ?: []),
-					];
-
-					$entityType = $column->getSearchable()->getType() ?: $entityType;
-				}
-
-				switch ($entityType) {
-					case Types::INTEGER:
-					case Types::BIGINT:
-					case Types::TEXT:
-					case Types::STRING:
-					case Types::DECIMAL:
-					case Types::SMALLINT:
-						$form->add($formFieldKey, TextType::class, $columnOptions);
-						break;
-					case Types::DATE_MUTABLE:
-					case Types::DATETIME_MUTABLE:
-						$form->add($formFieldKey, DateType::class, [
-							'placeholder' => '',
-							...$columnOptions,
-						]);
-						break;
-					case Types::BOOLEAN:
-						$form->add($formFieldKey, ChoiceType::class, [
-							'choices' => [
-								'Yes' => true,
-								'No' => false,
-							],
-							'placeholder' => 'All',
-							...$columnOptions,
-						]);
-						break;
-					default:
-						if (empty($entityType) || !is_string($entityType)) {
-							$entityType = null;
-						}
-
-						$form->add(
-							$formFieldKey,
-							class_exists($entityType) && is_a(
-								$entityType,
-								FormTypeInterface::class,
-								true
-							) ? $entityType : TextType::class,
-							$columnOptions
-						);
-				}
+			if (false === $column->getSearchable()) {
+				continue;
 			}
 
-			$this->forms['filter'] = $form->getForm()->handleRequest($request);
+			$formFieldKey = $column->getAlias();
+			$columnOptions = [
+				'label' => $column->getLabel(),
+				'required' => false,
+			];
+
+			$entityType = $type ?? TextType::class;
+			if ($column->getSearchable() instanceof SearchableOptions) {
+				$columnOptions = [
+					...$columnOptions,
+					...($column->getSearchable()->getOptions() ?: []),
+				];
+
+				$entityType = $column->getSearchable()->getType() ?: $entityType;
+			}
+
+			switch ($entityType) {
+				case Types::INTEGER:
+				case Types::BIGINT:
+				case Types::TEXT:
+				case Types::STRING:
+				case Types::DECIMAL:
+				case Types::SMALLINT:
+					$formBuilder->add($formFieldKey, TextType::class, $columnOptions);
+					break;
+				case Types::DATE_MUTABLE:
+				case Types::DATETIME_MUTABLE:
+					$formBuilder->add($formFieldKey, DateType::class, [
+						'placeholder' => '',
+						...$columnOptions,
+					]);
+					break;
+				case Types::BOOLEAN:
+					$formBuilder->add($formFieldKey, ChoiceType::class, [
+						'choices' => [
+							'Yes' => true,
+							'No' => false,
+						],
+						'placeholder' => 'All',
+						...$columnOptions,
+					]);
+					break;
+				default:
+					if (empty($entityType) || !is_string($entityType)) {
+						$entityType = null;
+					}
+
+					$formBuilder->add(
+						$formFieldKey,
+						class_exists($entityType) && is_a(
+							$entityType,
+							FormTypeInterface::class,
+							true
+						) ? $entityType : TextType::class,
+						$columnOptions
+					);
+			}
 		}
 
-		return $this->forms['filter'];
+		$form = $formBuilder->getForm();
+		$form->handleRequest($request);
+
+		return $form;
 	}
 
 	protected function getDefaultSort(): ?array
@@ -1546,32 +1544,32 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 		$columns = array_filter(
 			$this->getEntity()->columns,
-			fn(Column $c) => (
-					!$c->getGroup() ||
-					in_array($viewGroup, $c->getGroup())
+			fn(Column $col) => (
+					!$col->getGroup() ||
+					in_array($viewGroup, $col->getGroup())
 				)
 				&&
 				(
 					$searchable === null || (
-						null === $c->getSearchable() ||
-						$c->getSearchable() instanceof SearchableOptions ||
-						$searchable === $c->getSearchable()
+						null === $col->getSearchable() ||
+						$col->getSearchable() instanceof SearchableOptions ||
+						$searchable === $col->getSearchable()
 					)
 				)
 				&&
 				(
-					$c->getRoles() === null || $this->serviceContainer->authorizationChecker->isGranted(
-						is_array($c->getRoles()) ? new Expression(
+					$col->getRoles() === null || $this->serviceContainer->authorizationChecker->isGranted(
+						is_array($col->getRoles()) ? new Expression(
 							implode(
 								' or ',
-								array_map(fn(string $role) => sprintf('is_granted("%s")', $role), $c->getRoles())
+								array_map(fn(string $role) => sprintf('is_granted("%s")', $role), $col->getRoles())
 							)
-						) : $c->getRoles()
+						) : $col->getRoles()
 					)
 				)
 				&&
 				(
-					$c->getPermission() === null || $this->isAccessGranted($c->getPermission())
+					$col->getPermission() === null || $this->isAccessGranted($col->getPermission())
 				)
 		);
 
