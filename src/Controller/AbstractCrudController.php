@@ -752,8 +752,10 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			}
 		}
 
+		$id ??= $this->getEntityIdentifierValueFromObject($object);
+
 		return $this->response($request, [
-			'title' => $action?->title ?: ($id ? 'Edit' : 'New'),
+			'title' => $action->title ?: ($id ? 'Edit' : 'New'),
 			...($id ? ['object' => $this->compileEntityData($request, $object)] : []),
 			'form' => [
 				'modify' => [
