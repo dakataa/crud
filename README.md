@@ -43,11 +43,13 @@ with ReactJS Package [@dakataa/crud-react](https://github.com/dakataa/crud-react
 
    use App\Entity\Product;
    use App\Form\ProductType;
-   use Dakataa\Crud\Attribute\Entity;	
+   use Dakataa\Crud\Attribute\Action;
+   use Dakataa\Crud\Attribute\Entity;
    use Dakataa\Crud\Attribute\EntityType;
    use Dakataa\Crud\Controller\AbstractCrudController;
    use Doctrine\ORM\QueryBuilder;
-   use Symfony\Component\HttpFoundation\Request;use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+   use Symfony\Component\HttpFoundation\Request;
+   use Symfony\Component\Routing\Attribute\Route;
    
    #[Route('/product')]
    #[Entity(Product::class)]
@@ -57,17 +59,15 @@ with ReactJS Package [@dakataa/crud-react](https://github.com/dakataa/crud-react
    }
    ```
 
-   if you want to customize initial query. This method is called before query execution.
+   If you want to customize the initial query, override `buildCustomQuery()`. This method is called before query execution and receives the current CRUD action.
 
-    ```php
-    public function buildCustomQuery(Request $request, QueryBuilder $query): AbstractCrudController
-    {
-        $query
-            ->andWhere('a.enabled = true');
-			
-        return $this;
+   ```php
+   protected function buildCustomQuery(Request $request, Action $action, QueryBuilder $query): void
+   {
+       $query
+           ->andWhere('a.enabled = true');
    }
-    ```
+   ```
  
     with Make Command
 
