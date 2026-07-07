@@ -74,7 +74,16 @@ with ReactJS Package [@dakataa/crud-react](https://github.com/dakataa/crud-react
     ```shell
     php symfony crud:make:entity Product ProductType ProductController
     ```
- 
+
+## Action Discovery
+
+The `/_crud/actions` endpoint returns CRUD action metadata for frontend clients such as `@dakataa/crud-react`.
+The React client uses this metadata to build action URLs, labels, visibility rules, and permission-aware UI.
+
+Action metadata can include permission information, but the frontend must treat it as discovery data only.
+Every action endpoint must still enforce access on the server side when the action is executed.
+Client-side AJAX checks are useful for hiding or disabling UI controls, but they are not a replacement for backend authorization.
+
 ## How to extend templates
 
 ## Map URL parameter to entity column
