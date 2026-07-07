@@ -153,7 +153,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	public function getEntityType(Request $request): ?EntityType
 	{
 		$action = $this->getAction($request);
-		$entityType = $this->getPHPAttributes(EntityType::class, $action->name) ?: $this->getPHPAttributes(
+		$entityType = $this->getPHPAttributes(EntityType::class, $action?->name) ?: $this->getPHPAttributes(
 			EntityType::class
 		);
 
@@ -201,8 +201,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				return null;
 			}
 
-			$value = $this->columnValueDetermination($request, $object, $column) ?: null;
-			if (null == $value) {
+			$value = $this->columnValueDetermination($request, $object, $column);
+			if (null === $value) {
 				if ($getter = $column->getGetter()) {
 					if (is_string($getter)) {
 						$getter = sprintf('get%s', (preg_replace('/^get/i', '', Container::camelize($getter))));
@@ -358,7 +358,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		object $object,
 		Column $column
 	): mixed {
-		return false;
+		return null;
 	}
 
 	protected function getACLs(Request $request, array $items)
@@ -647,7 +647,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			$finder = $entityFinder->finder;
 			$controllerClass = $this->getControllerClass();
 			if (class_exists($finder)) {
-				$classFinder = new $controllerClass();
+				$classFinder = new $finder();
 				$object = $classFinder($request, $this->serviceContainer);
 			} else {
 				if (method_exists($controllerClass, $finder)) {

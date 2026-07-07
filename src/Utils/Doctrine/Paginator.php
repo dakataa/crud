@@ -60,7 +60,7 @@ class Paginator
 
 	public function getTotalPages(): ?int
 	{
-		return $this->getMaxResults() ? ceil($this->ormPaginator->count() / $this->getMaxResults()) : null;
+		return $this->getMaxResults() ? ceil(($this->ormPaginator?->count() ?: 0) / $this->getMaxResults()) : null;
 	}
 
 	public function getOffset(int $page = null): int

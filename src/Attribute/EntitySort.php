@@ -5,7 +5,7 @@ namespace Dakataa\Crud\Attribute;
 use Attribute;
 use Dakataa\Crud\Enum\SortTypeEnum;
 
-#[Attribute(Attribute::TARGET_CLASS | Attribute::IS_REPEATABLE)]
+#[Attribute(Attribute::TARGET_CLASS  | Attribute::TARGET_METHOD | Attribute::IS_REPEATABLE)]
 class EntitySort
 {
 	public function __construct(
