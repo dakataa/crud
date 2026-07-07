@@ -4,13 +4,14 @@ namespace Dakataa\Crud\Controller;
 
 use Dakataa\Crud\Attribute\Entity;
 use Dakataa\Crud\Attribute\EntityType;
+use Symfony\Component\HttpFoundation\Request;
 
 interface CrudControllerInterface
 {
 
-	public function getEntity(): Entity|null;
+	public function getEntity(Request $request): Entity|null;
 
-	public function getEntityType(): ?EntityType;
+	public function getEntityType(Request $request): ?EntityType;
 
 	public function setServiceContainer(CrudServiceContainer $loader): void;
 }
