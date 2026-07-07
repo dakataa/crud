@@ -7,8 +7,9 @@ use Dakataa\Crud\Attribute\LoadAction;
 use Dakataa\Crud\Controller\AbstractCrudController;
 use Dakataa\Crud\Controller\CrudServiceContainer;
 use Dakataa\Crud\Service\ActionCollection;
+use Dakataa\Crud\Twig\TemplateProvider;
 use Doctrine\ORM\EntityManagerInterface;
-use ReflectionAttribute;
+use Doctrine\ORM\QueryBuilder;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
@@ -20,7 +21,6 @@ use Symfony\Component\Routing\RouterInterface;
 use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
-use Dakataa\Crud\Twig\TemplateProvider;
 
 class CrudSubscriber
 {
@@ -79,18 +79,24 @@ class CrudSubscriber
 					return get_class($this->originalController);
 				}
 
-				protected function getPHPAttributes(string $attributeFQCN, string|null $method = null): array
-				{
-					return $this->crudSubscriber->getPHPAttributes($this->controllerEvent, $attributeFQCN);
-				}
-
 				public function buildFormTypeOptions(Request $request, Action $action, array $options): array
 				{
-					if(method_exists($this->originalController, 'buildFormTypeOptions')) {
+					if (method_exists($this->originalController, 'buildFormTypeOptions')) {
 						return $this->originalController->buildFormTypeOptions($request, $action, $options);
 					}
 
 					return parent::buildFormTypeOptions($request, $action, $options);
+				}
+
+				public function buildCustomQuery(Request $request, Action $action, QueryBuilder $query): void
+				{
+					if (method_exists($this->originalController, 'buildCustomQuery')) {
+						$this->originalController->buildCustomQuery($request, $action, $query);
+
+						return;
+					}
+
+					parent::buildCustomQuery($request, $action, $query);
 				}
 			};
 
@@ -125,19 +131,6 @@ class CrudSubscriber
 		$event->setController([$this->controller, $loadAction->name], $event->getAttributes());
 	}
 
-	public function getPHPAttributes(ControllerArgumentsEvent $controllerEvent, string $attributeClass): array
-	{
-		$attributes = $controllerEvent->getAttributes($attributeClass);
-		if (!empty($attributes)) {
-			return $attributes;
-		}
-
-		// Get Method Attributes
-		return array_map(
-			fn(ReflectionAttribute $reflectionAttribute) => $reflectionAttribute->newInstance(),
-			$controllerEvent->getAttributes($attributeClass)
-		);
-	}
 
 	public function getController(): ?AbstractCrudController
 	{

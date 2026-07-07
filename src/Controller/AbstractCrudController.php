@@ -69,7 +69,6 @@ use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 use Symfony\Component\Serializer\Exception\ExceptionInterface;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Contracts\Service\Attribute\Required;
-use Symfony\Contracts\Service\ResetInterface;
 use TypeError;
 
 
@@ -276,12 +275,14 @@ abstract class AbstractCrudController implements CrudControllerInterface
 					break;
 				}
 
-				if (false === $classMetaData->isSingleValuedAssociation($fieldAlias)) {
-					break;
-				}
 
 				$accessor = PropertyAccess::createPropertyAccessor();
 				$associationDataObject = $accessor->getValue($dataObject, $fieldAlias);
+
+				if ($associationDataObject instanceof Collection) {
+					$associationDataObject = $associationDataObject->first() ?: null;
+				}
+
 				if (null === $associationDataObject) {
 					break;
 				}
@@ -1139,9 +1140,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return $limit;
 	}
 
-	protected function buildCustomQuery(Request $request, QueryBuilder $query): self
+	protected function buildCustomQuery(Request $request, Action $action, QueryBuilder $query): void
 	{
-		return $this;
 	}
 
 	private function buildColumn(Column $column): array|false
@@ -1485,7 +1485,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			}
 		}
 
-		$this->buildCustomQuery($request, $query);
+		$this->buildCustomQuery($request, $action, $query);
 
 		return $query;
 	}
