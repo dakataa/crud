@@ -7,6 +7,7 @@ use Dakataa\Crud\Attribute\LoadAction;
 use Dakataa\Crud\Controller\AbstractCrudController;
 use Dakataa\Crud\Controller\CrudServiceContainer;
 use Dakataa\Crud\Service\ActionCollection;
+use Dakataa\Crud\Service\CrudContext;
 use Dakataa\Crud\Twig\TemplateProvider;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\QueryBuilder;
@@ -108,6 +109,8 @@ class CrudSubscriber
 		if (!method_exists($this->controller, $loadAction->name)) {
 			return;
 		}
+
+		$this->controller->setContext(new CrudContext($event->getRequest()));
 
 		/** @var IsGranted $attribute */
 		foreach ($event->getAttributes(IsGranted::class) as $attribute) {
