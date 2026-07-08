@@ -203,10 +203,15 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	): array {
 		$additionalEntityFields = [];
 		if (is_array($object)) {
-			$objectClass = $object[0]::class;
+			if(empty($object[0])) {
+				throw new Exception('Invalid results.');
+			}
+
 			if ($object[0] instanceof Proxy) {
 				$objectClass = get_parent_class($object[0]);
 			}
+
+			$objectClass = $object[0]::class;
 
 			if ($objectClass === $this->getEntity(true)->getFqcn()) {
 				$additionalEntityFields = array_filter(
@@ -589,7 +594,13 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	public function view(Request $request, int|string $id): ?Response
 	{
 		$action = $this->getAction($request);
-		$object = $this->getEntityRepository()->find($this->getEntityIdentifierPrepare($id));
+		$entityFinderObject = $this->findEntityWithFinder($action);
+		if ($entityFinderObject !== false) {
+			$object = $entityFinderObject;
+		} else {
+			$object = $this->getEntityRepository()->find($this->getEntityIdentifierPrepare($id));
+		}
+
 		if (empty($object)) {
 			throw new NotFoundHttpException('Not Found');
 		}
@@ -654,6 +665,39 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 	}
 
+	private function findEntityWithFinder(Action|null $action = null): object|null|false
+	{
+		if (!$this->context) {
+			throw new Exception('Context is not set.');
+		}
+
+		$request = $this->context->request;
+		$action ??= $this->getAction($request);
+
+		if (null === $entityFinder = $this->getPHPAttribute(EntityFinder::class, $action->name)) {
+			return false;
+		}
+
+		$finder = $entityFinder->finder;
+		$controllerClass = $this->getControllerClass();
+		if (class_exists($finder)) {
+			$classFinder = new $finder();
+			$object = $classFinder($request, $this->serviceContainer);
+		} else {
+			if (method_exists($controllerClass, $finder)) {
+				$object = $controllerClass::$finder($request, $this->serviceContainer);
+			} else {
+				throw new NotFoundHttpException('Invalid Entity Finder. Class or Method not found.');
+			}
+		}
+
+		if ($object && false === is_a($object, $this->getEntity(true)->getFqcn(), true)) {
+			throw new NotFoundHttpException('Invalid Entity Finder. Method must return an object of the same class.');
+		}
+
+		return $object;
+	}
+
 	final protected function modify(
 		Request $request,
 		Action $action = null,
@@ -671,23 +715,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		$messages = [];
 		$object = null;
 
-		if (null !== $entityFinder = $this->getPHPAttribute(EntityFinder::class, $action->name)) {
-			$finder = $entityFinder->finder;
-			$controllerClass = $this->getControllerClass();
-			if (class_exists($finder)) {
-				$classFinder = new $finder();
-				$object = $classFinder($request, $this->serviceContainer);
-			} else {
-				if (method_exists($controllerClass, $finder)) {
-					$object = $controllerClass::$finder($request, $this->serviceContainer);
-				} else {
-					throw new NotFoundHttpException('Invalid Entity Finder. Class or Method not found.');
-				}
-			}
-
-			if ($object && false === is_a($object, $this->getEntity(true)->getFqcn(), true)) {
-				throw new NotFoundHttpException('Invalid Entity Finder. Method must return an object of the same class.');
-			}
+		$entityFinderObject = $this->findEntityWithFinder($action);
+		if ($entityFinderObject !== false) {
+			$object = $entityFinderObject;
 		} else {
 			if ($id) {
 				$object = $this->getEntityRepository()->find($this->getEntityIdentifierPrepare($id));
@@ -745,7 +775,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 			if ($form->isSubmitted() && $form->isValid() && $save) {
 				$this->beforeFormSave($request, $form);
-
 				if ($this->getEntity()) {
 					$this->serviceContainer->entityManager->persist($form->getData());
 					$this->serviceContainer->entityManager->flush();
@@ -757,7 +786,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 				$messages = [
 					'success' => [
-						$this->getEntityType($request)?->getSuccessMessage() ?: 'Item was saved successfully',
+						$this->getEntityType()?->getSuccessMessage() ?: 'Item was saved successfully',
 					],
 				];
 
