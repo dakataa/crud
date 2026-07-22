@@ -597,7 +597,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	public function view(Request $request, int|string $id): ?Response
 	{
 		$action = $this->getAction($request);
-		$entityFinderObject = $this->findEntityWithFinder($action);
+		$entityFinderObject = $this->getEntityWithFinder($action);
 		if ($entityFinderObject !== false) {
 			$object = $entityFinderObject;
 		} else {
@@ -668,7 +668,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 	}
 
-	private function findEntityWithFinder(Action|null $action = null): object|null|false
+	private function getEntityWithFinder(Action|null $action = null): object|null|false
 	{
 		if (!$this->context) {
 			throw new Exception('Context is not set.');
@@ -683,16 +683,13 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 		$finder = $entityFinder->finder;
 		$controllerClass = $this->getControllerClass();
-		if (class_exists($finder)) {
-			$classFinder = new $finder();
-			$object = $classFinder($request, $this->serviceContainer);
-		} else {
-			if (method_exists($controllerClass, $finder)) {
-				$object = $controllerClass::$finder($request, $this->serviceContainer);
-			} else {
-				throw new NotFoundHttpException('Invalid Entity Finder. Class or Method not found.');
-			}
-		}
+		$object = match (true) {
+			is_string($finder) && class_exists($finder) => (new $finder())($request, $this->serviceContainer),
+			is_string($finder) && method_exists($this, $finder) => $this->$finder($request, $this->serviceContainer),
+			is_string($finder) && method_exists($controllerClass, $finder) => $controllerClass::$finder($request, $this->serviceContainer),
+			is_callable($finder) => call_user_func($finder, $request, $this->serviceContainer),
+			default => throw new NotFoundHttpException('Invalid Entity Finder. Class or Method not found.'),
+		};
 
 		if ($object && false === is_a($object, $this->getEntity(true)->getFqcn(), true)) {
 			throw new NotFoundHttpException('Invalid Entity Finder. Method must return an object of the same class.');
@@ -718,7 +715,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		$messages = [];
 		$object = null;
 
-		$entityFinderObject = $this->findEntityWithFinder($action);
+		$entityFinderObject = $this->getEntityWithFinder($action);
 		if ($entityFinderObject !== false) {
 			$object = $entityFinderObject;
 		} else {
