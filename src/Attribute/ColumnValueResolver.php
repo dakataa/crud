@@ -5,7 +5,7 @@ namespace Dakataa\Crud\Attribute;
 use Attribute;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
-#[Attribute(Attribute::TARGET_METHOD)]
+#[Attribute(Attribute::TARGET_METHOD | Attribute::TARGET_CLASS)]
 class ColumnValueResolver
 {
 

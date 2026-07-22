@@ -700,7 +700,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		$request = $this->context->request;
 		$action ??= $this->getAction($request);
 
-		return $this->getPHPAttribute(ColumnValueResolver::class, $action->name);
+		return $this->getPHPAttribute(ColumnValueResolver::class, $action->name) ?: $this->getPHPAttribute(ColumnValueResolver::class);
 	}
 
 	final protected function modify(
