@@ -338,6 +338,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 			$value = $getValue($dataObject, $fieldAlias ?? $column->getField(), $column);
 			$columnUseFlatKeys = $useFlatKeys === null ? $column->isUseFlatKey() : $useFlatKeys;
+
 			if ($columnUseFlatKeys) {
 				if (array_key_exists($column->getField(), $result)) {
 					throw new Exception(
@@ -352,8 +353,10 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				$result[$column->getField()] = $value;
 			} else {
 				$newResult = &$result;
+
 				foreach ($fieldPath as $index => $fieldAlias) {
 					$isLastField = count($fieldPath) === ($index + 1);
+					$isNestedField = count($fieldPath) > 1;
 
 					if (!array_key_exists($fieldAlias, $newResult)) {
 						$newResult[$fieldAlias] = $isLastField ? $value : [];
@@ -369,7 +372,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 						}
 					}
 
-					if (is_array($newResult[$fieldAlias])) {
+					if ($isNestedField && is_array($newResult[$fieldAlias])) {
 						if ($isLastField) {
 							throw new Exception(
 								sprintf(
