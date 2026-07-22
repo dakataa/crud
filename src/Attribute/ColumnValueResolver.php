@@ -3,6 +3,7 @@
 namespace Dakataa\Crud\Attribute;
 
 use Attribute;
+use ReflectionMethod;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 #[Attribute(Attribute::TARGET_METHOD | Attribute::TARGET_CLASS)]
@@ -21,7 +22,7 @@ class ColumnValueResolver
 	}
 
 
-	public function getCallable(object $resolverContext, Column $column): array|string|false
+	public function getCallable(object $resolverContext, Column $column): callable|false
 	{
 		$resolver = $this->resolver;
 
@@ -31,7 +32,10 @@ class ColumnValueResolver
 
 		return match (true) {
 			is_string($resolver) && class_exists($resolver) => [new $resolver, '__invoke'],
-			is_string($resolver) && method_exists($resolverContext, $resolver) => [$resolverContext, $resolver],
+			is_string($resolver) && method_exists($resolverContext, $resolver) => (new ReflectionMethod(
+				$resolverContext,
+				$resolver
+			))->getClosure($resolverContext),
 			is_callable($resolver) => $resolver,
 			default => throw new NotFoundHttpException('Invalid Column Value Resolver. Class or Method not found.'),
 		};

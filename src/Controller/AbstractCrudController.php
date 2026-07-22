@@ -677,11 +677,13 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 
 		$finder = $entityFinder->finder;
-		$controllerClass = $this->getControllerClass();
+		$resolverContext = $this->getResolverContext();
 		$object = match (true) {
 			is_string($finder) && class_exists($finder) => (new $finder())($request, $this->serviceContainer),
-			is_string($finder) && method_exists($this, $finder) => $this->$finder($request, $this->serviceContainer),
-			is_string($finder) && method_exists($controllerClass, $finder) => $controllerClass::$finder($request, $this->serviceContainer),
+			is_string($finder) && method_exists($resolverContext, $finder) => (new ReflectionMethod(
+				$resolverContext,
+				$finder
+			))->getClosure($resolverContext)($request, $this->serviceContainer),
 			is_callable($finder) => call_user_func($finder, $request, $this->serviceContainer),
 			default => throw new NotFoundHttpException('Invalid Entity Finder. Class or Method not found.'),
 		};
