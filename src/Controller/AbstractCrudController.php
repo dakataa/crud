@@ -1327,7 +1327,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			->getEntityRepository()
 			->createQueryBuilder(self::ENTITY_ROOT_ALIAS);
 
-		foreach (($entity?->joins ?? []) as $join) {
+		foreach (($entity->joins ?? []) as $join) {
 			$query->{match ($join->type) {
 				Join::LEFT_JOIN => 'leftJoin',
 				default => 'innerJoin'
@@ -1339,7 +1339,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			);
 		}
 
-		foreach ($entity?->group ?? [] as $group) {
+		foreach ($entity->group ?? [] as $group) {
 			$groupByField = (str_contains($group->field, '.') ? $group->field : sprintf(
 				'%s.%s',
 				self::ENTITY_ROOT_ALIAS,
