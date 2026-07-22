@@ -3,7 +3,6 @@
 namespace Dakataa\Crud\EventSubscriber;
 
 use Dakataa\Crud\Attribute\Action;
-use Dakataa\Crud\Attribute\Column;
 use Dakataa\Crud\Attribute\LoadAction;
 use Dakataa\Crud\Controller\AbstractCrudController;
 use Dakataa\Crud\Controller\CrudServiceContainer;
@@ -81,16 +80,9 @@ class CrudSubscriber
 					return get_class($this->originalController);
 				}
 
-				protected function columnValueDetermination(
-					Request $request,
-					object $object,
-					Column $column
-				): mixed {
-					if (method_exists($this->originalController, 'columnValueDetermination')) {
-						return $this->originalController->columnValueDetermination($request, $object, $column);
-					}
-
-					return parent::columnValueDetermination($request, $object, $column);
+				public function getResolverContext(): object
+				{
+					return $this->originalController;
 				}
 
 				public function buildFormTypeOptions(Request $request, Action $action, array $options): array

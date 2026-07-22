@@ -3,11 +3,11 @@
 namespace Dakataa\Crud\Controller;
 
 use BackedEnum;
-use Closure;
 use Dakataa\Crud\Attribute\ACL;
 use Dakataa\Crud\Attribute\Action;
 use Dakataa\Crud\Attribute\Column;
 use Dakataa\Crud\Attribute\Entity;
+use Dakataa\Crud\Attribute\ColumnValueResolver;
 use Dakataa\Crud\Attribute\EntityFinder;
 use Dakataa\Crud\Attribute\EntityGroup;
 use Dakataa\Crud\Attribute\EntityJoinColumn;
@@ -18,7 +18,6 @@ use Dakataa\Crud\Attribute\Enum\EntityColumnViewGroupEnum;
 use Dakataa\Crud\Attribute\PathParameterToFieldMap;
 use Dakataa\Crud\Attribute\QueryParameterToFieldMap;
 use Dakataa\Crud\Attribute\SearchableOptions;
-use Dakataa\Crud\Exception\UnresolvedColumnValueException;
 use Dakataa\Crud\Security\SecuritySubject;
 use Dakataa\Crud\Service\CrudContext;
 use Dakataa\Crud\Twig\TemplateProvider;
@@ -204,7 +203,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	): array {
 		$additionalEntityFields = [];
 		if (is_array($object)) {
-			if(empty($object[0])) {
+			if (empty($object[0])) {
 				throw new Exception('Invalid results.');
 			}
 
@@ -226,7 +225,10 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			}
 		}
 
-		$getValue = function (object|null $object, string $field, Column $column) use ($request, $additionalEntityFields) {
+
+		$columnValueResolver = $this->getColumnResolver();
+
+		$getValue = function (object|null $object, string $field, Column $column) use ($request, $additionalEntityFields, $columnValueResolver) {
 			if (!$object) {
 				return null;
 			}
@@ -235,38 +237,36 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				return null;
 			}
 
-			try {
-				$value = $this->columnValueDetermination($request, $object, $column);
-			} catch (UnresolvedColumnValueException) {
-				$value = null;
 
-				if ($getter = $column->getGetter()) {
-					if (is_string($getter)) {
-						$getter = sprintf('get%s', (preg_replace('/^get/i', '', Container::camelize($getter))));
+			$value = null;
+			if ($columnValueResolverCallable = $columnValueResolver?->getCallable($this->getResolverContext(), $column)) {
+				$value = call_user_func($columnValueResolverCallable, $request, $object, $column, $this->serviceContainer);
+			} elseif ($getter = $column->getGetter()) {
+				if (is_string($getter)) {
+					$getter = sprintf('get%s', (preg_replace('/^get/i', '', Container::camelize($getter))));
 
-						if (method_exists($object, $getter)) {
-							$value = $object->$getter();
-						}
+					if (method_exists($object, $getter)) {
+						$value = $object->$getter();
 					}
+				}
 
-					if (is_callable($getter) && $getter instanceof Closure) {
-						$value = $getter($value);
-					}
+				if (is_callable($getter)) {
+					$value = $getter($value);
+				}
+			} else {
+				if (array_key_exists($column->getAlias(), $additionalEntityFields)) {
+					$value = $additionalEntityFields[$column->getAlias()];
 				} else {
-					if (array_key_exists($column->getAlias(), $additionalEntityFields)) {
-						$value = $additionalEntityFields[$column->getAlias()];
-					} else {
-						foreach (['get', 'has', 'is'] as $methodPrefix) {
-							$method = sprintf(
-								'%s%s',
-								$methodPrefix,
-								Container::camelize(Container::underscore($field))
-							);
+					foreach (['get', 'has', 'is'] as $methodPrefix) {
+						$method = sprintf(
+							'%s%s',
+							$methodPrefix,
+							Container::camelize(Container::underscore($field))
+						);
 
-							if (method_exists($object, $method)) {
-								$value = $object->$method();
-								break;
-							}
+						if (method_exists($object, $method)) {
+							$value = $object->$method();
+							break;
 						}
 					}
 				}
@@ -387,14 +387,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 
 		return $result;
-	}
-
-	protected function columnValueDetermination(
-		Request $request,
-		object $object,
-		Column $column
-	): mixed {
-		throw new UnresolvedColumnValueException();
 	}
 
 	protected function getACLs(Request $request, array $items)
@@ -698,6 +690,19 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return $object;
 	}
 
+
+	private function getColumnResolver(Action|null $action = null): ColumnValueResolver|null
+	{
+		if (!$this->context) {
+			throw new Exception('Context is not set.');
+		}
+
+		$request = $this->context->request;
+		$action ??= $this->getAction($request);
+
+		return $this->getPHPAttribute(ColumnValueResolver::class, $action->name);
+	}
+
 	final protected function modify(
 		Request $request,
 		Action $action = null,
@@ -944,6 +949,11 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	public function getControllerClass(): string
 	{
 		return static::class;
+	}
+
+	public function getResolverContext(): object
+	{
+		return $this;
 	}
 
 
@@ -1274,8 +1284,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			'nullable' => $entityMetadata->hasField($fieldName) ? $entityMetadata->isNullable($fieldName) : null,
 			'column' => $column,
 			'canSelect' => $entityMetadata->hasField($fieldName) && false === $entityMetadata->hasAssociation(
-				$fieldName
-			),
+					$fieldName
+				),
 		];
 	}
 
@@ -1464,7 +1474,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 					$query->leftJoin($relationExpression, $relation['alias']);
 					$usedJoinAliases[] = $relation['alias'];
 				}
-
 			}
 
 			if ($entityField === 'compositeId' && $this->getEntityClassMetadata()->isIdentifierComposite) {
