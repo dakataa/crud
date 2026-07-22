@@ -18,6 +18,7 @@ use Dakataa\Crud\Attribute\Enum\EntityColumnViewGroupEnum;
 use Dakataa\Crud\Attribute\PathParameterToFieldMap;
 use Dakataa\Crud\Attribute\QueryParameterToFieldMap;
 use Dakataa\Crud\Attribute\SearchableOptions;
+use Dakataa\Crud\Exception\UnresolvedColumnValueException;
 use Dakataa\Crud\Security\SecuritySubject;
 use Dakataa\Crud\Service\CrudContext;
 use Dakataa\Crud\Twig\TemplateProvider;
@@ -234,8 +235,11 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				return null;
 			}
 
-			$value = $this->columnValueDetermination($request, $object, $column);
-			if (null === $value) {
+			try {
+				$value = $this->columnValueDetermination($request, $object, $column);
+			} catch (UnresolvedColumnValueException) {
+				$value = null;
+
 				if ($getter = $column->getGetter()) {
 					if (is_string($getter)) {
 						$getter = sprintf('get%s', (preg_replace('/^get/i', '', Container::camelize($getter))));
@@ -248,24 +252,24 @@ abstract class AbstractCrudController implements CrudControllerInterface
 					if (is_callable($getter) && $getter instanceof Closure) {
 						$value = $getter($value);
 					}
-				}
+				} else {
+					if (array_key_exists($column->getAlias(), $additionalEntityFields)) {
+						$value = $additionalEntityFields[$column->getAlias()];
+					} else {
+						foreach (['get', 'has', 'is'] as $methodPrefix) {
+							$method = sprintf(
+								'%s%s',
+								$methodPrefix,
+								Container::camelize(Container::underscore($field))
+							);
 
-				foreach (['get', 'has', 'is'] as $methodPrefix) {
-					$method = sprintf(
-						'%s%s',
-						$methodPrefix,
-						Container::camelize(Container::underscore($field))
-					);
-
-					if (method_exists($object, $method)) {
-						$value = $object->$method();
-						break;
+							if (method_exists($object, $method)) {
+								$value = $object->$method();
+								break;
+							}
+						}
 					}
 				}
-			}
-
-			if (null === $value && isset($additionalEntityFields[$field])) {
-				$value = $additionalEntityFields[$field];
 			}
 
 			if ($value instanceof Collection) {
@@ -318,12 +322,11 @@ abstract class AbstractCrudController implements CrudControllerInterface
 					break;
 				}
 
-
 				$accessor = PropertyAccess::createPropertyAccessor();
 				$associationDataObject = $accessor->getValue($dataObject, $fieldAlias);
 
 				if ($associationDataObject instanceof Collection) {
-					$associationDataObject = $associationDataObject->first() ?: null;
+					break;
 				}
 
 				if (null === $associationDataObject) {
@@ -391,7 +394,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		object $object,
 		Column $column
 	): mixed {
-		return null;
+		throw new UnresolvedColumnValueException();
 	}
 
 	protected function getACLs(Request $request, array $items)
@@ -1274,8 +1277,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			'nullable' => $entityMetadata->hasField($fieldName) ? $entityMetadata->isNullable($fieldName) : null,
 			'column' => $column,
 			'canSelect' => $entityMetadata->hasField($fieldName) && false === $entityMetadata->hasAssociation(
-					$fieldName
-				),
+				$fieldName
+			),
 		];
 	}
 
