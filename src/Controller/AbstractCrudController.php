@@ -1322,7 +1322,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		Request $request,
 		EntityColumnViewGroupEnum|string $viewGroup = EntityColumnViewGroupEnum::List,
 	): QueryBuilder {
-		$entity = $this->entity;
+		$entity = $this->getEntity(true);
 		$query = $this
 			->getEntityRepository()
 			->createQueryBuilder(self::ENTITY_ROOT_ALIAS);
@@ -1352,6 +1352,13 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		$filters = $this->getFilterForm($request)?->getData();
 		$sortingFields = array_filter($this->prepareSorting($request, $viewGroup));
 		$action = $this->getAction($request);
+
+		$this->buildCustomQuery($request, $action, $query);
+
+		$usedJoinAliases = array_map(
+			fn(Join $join) => $join->getAlias(),
+			array_merge([], ...array_values($query->getDQLPart('join')))
+		);
 
 		/** @var PathParameterToFieldMap[] $mappedPathParameters */
 		$mappedPathParameters = [
@@ -1448,10 +1455,16 @@ abstract class AbstractCrudController implements CrudControllerInterface
 					if (in_array($relationExpression, $relationExpressions)) {
 						continue;
 					}
+					$relationExpressions[] = $relationExpression;
+
+					if (in_array($relation['alias'], $usedJoinAliases)) {
+						continue;
+					}
 
 					$query->leftJoin($relationExpression, $relation['alias']);
-					$relationExpressions[] = $relationExpression;
+					$usedJoinAliases[] = $relation['alias'];
 				}
+
 			}
 
 			if ($entityField === 'compositeId' && $this->getEntityClassMetadata()->isIdentifierComposite) {
@@ -1551,8 +1564,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 					->addOrderBy($queryEntityField, $direction);
 			}
 		}
-
-		$this->buildCustomQuery($request, $action, $query);
 
 		return $query;
 	}
