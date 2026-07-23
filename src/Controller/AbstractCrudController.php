@@ -18,6 +18,7 @@ use Dakataa\Crud\Attribute\Enum\ActionVisibilityEnum;
 use Dakataa\Crud\Attribute\Enum\EntityColumnViewGroupEnum;
 use Dakataa\Crud\Attribute\PathParameterToFieldMap;
 use Dakataa\Crud\Attribute\QueryParameterToFieldMap;
+use Dakataa\Crud\Attribute\QueryResolver;
 use Dakataa\Crud\Attribute\SearchableOptions;
 use Dakataa\Crud\Security\SecuritySubject;
 use Dakataa\Crud\Service\CrudContext;
@@ -699,16 +700,25 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	}
 
 
-	private function getColumnResolver(Action|null $action = null): ColumnValueResolver|null
+	private function getResolverAttribute(string $attributeClass, Action|null $action = null): mixed
 	{
 		if (!$this->context) {
 			throw new Exception('Context is not set.');
 		}
 
-		$request = $this->context->request;
-		$action ??= $this->getAction($request);
+		$action ??= $this->getAction($this->context->request);
 
-		return $this->getPHPAttribute(ColumnValueResolver::class, $action->name) ?: $this->getPHPAttribute(ColumnValueResolver::class);
+		return $this->getPHPAttribute($attributeClass, $action->name) ?: $this->getPHPAttribute($attributeClass);
+	}
+
+	private function getColumnResolver(Action|null $action = null): ColumnValueResolver|null
+	{
+		return $this->getResolverAttribute(ColumnValueResolver::class, $action);
+	}
+
+	private function getQueryResolver(Action|null $action = null): QueryResolver|null
+	{
+		return $this->getResolverAttribute(QueryResolver::class, $action);
 	}
 
 	final protected function modify(
@@ -1225,10 +1235,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return $limit;
 	}
 
-	protected function buildCustomQuery(Request $request, Action $action, QueryBuilder $query): void
-	{
-	}
-
 	private function buildColumn(Column $column): array|false
 	{
 		$fieldName = $column->getField();
@@ -1371,7 +1377,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		$sortingFields = array_filter($this->prepareSorting($request, $viewGroup));
 		$action = $this->getAction($request);
 
-		$this->buildCustomQuery($request, $action, $query);
+		if ($queryResolverCallable = $this->getQueryResolver($action)?->getCallable($this->getResolverContext(), $action)) {
+			call_user_func($queryResolverCallable, $request, $action, $query, $this->serviceContainer);
+		}
 
 		$usedJoinAliases = array_map(
 			fn(Join $join) => $join->getAlias(),

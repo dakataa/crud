@@ -10,7 +10,6 @@ use Dakataa\Crud\Service\ActionCollection;
 use Dakataa\Crud\Service\CrudContext;
 use Dakataa\Crud\Twig\TemplateProvider;
 use Doctrine\ORM\EntityManagerInterface;
-use Doctrine\ORM\QueryBuilder;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
@@ -94,16 +93,6 @@ class CrudSubscriber
 					return parent::buildFormTypeOptions($request, $action, $options);
 				}
 
-				public function buildCustomQuery(Request $request, Action $action, QueryBuilder $query): void
-				{
-					if (method_exists($this->originalController, 'buildCustomQuery')) {
-						$this->originalController->buildCustomQuery($request, $action, $query);
-
-						return;
-					}
-
-					parent::buildCustomQuery($request, $action, $query);
-				}
 			};
 
 			$this->controller->setServiceContainer($this->crudServiceContainer);
