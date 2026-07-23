@@ -3,6 +3,7 @@
 namespace Dakataa\Crud\Controller;
 
 use BackedEnum;
+use Closure;
 use Dakataa\Crud\Attribute\ACL;
 use Dakataa\Crud\Attribute\Action;
 use Dakataa\Crud\Attribute\Column;
@@ -250,7 +251,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 					}
 				}
 
-				if (is_callable($getter)) {
+				if ($getter instanceof Closure) {
 					$value = $getter($value);
 				}
 			} else {
@@ -316,6 +317,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		foreach ($this->getEntityColumns($viewGroup, includeIdentifier: true) as $column) {
 			$dataObject = $object;
 			$fieldPath = explode('.', $column->getField());
+
 			foreach ($fieldPath as $fieldAlias) {
 				$classMetaData = $this->serviceContainer->entityManager->getClassMetadata($dataObject::class);
 				if (false === $classMetaData->hasAssociation($fieldAlias)) {
@@ -355,7 +357,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				$result[$column->getField()] = $value;
 			} else {
 				$newResult = &$result;
-				$isNestedField = count($fieldPath) > 1;
 
 				foreach ($fieldPath as $index => $fieldAlias) {
 					$isLastField = count($fieldPath) === ($index + 1);
@@ -372,9 +373,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 								)
 							);
 						}
-					}
 
-					if ($isNestedField && is_array($newResult[$fieldAlias])) {
 						if ($isLastField) {
 							throw new Exception(
 								sprintf(
@@ -384,7 +383,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 								)
 							);
 						}
+					}
 
+					if (!$isLastField) {
 						$newResult = &$newResult[$fieldAlias];
 					}
 				}
