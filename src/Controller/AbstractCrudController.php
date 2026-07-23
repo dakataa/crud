@@ -322,12 +322,14 @@ abstract class AbstractCrudController implements CrudControllerInterface
 					break;
 				}
 
+				$associationMapping = $classMetaData->getAssociationMapping($fieldAlias);
+				if($associationMapping->isToMany()) {
+					break;
+				}
+
 				$accessor = PropertyAccess::createPropertyAccessor();
 				$associationDataObject = $accessor->getValue($dataObject, $fieldAlias);
 
-				if ($associationDataObject instanceof Collection) {
-					break;
-				}
 
 				if (null === $associationDataObject) {
 					break;
@@ -353,10 +355,10 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				$result[$column->getField()] = $value;
 			} else {
 				$newResult = &$result;
+				$isNestedField = count($fieldPath) > 1;
 
 				foreach ($fieldPath as $index => $fieldAlias) {
 					$isLastField = count($fieldPath) === ($index + 1);
-					$isNestedField = count($fieldPath) > 1;
 
 					if (!array_key_exists($fieldAlias, $newResult)) {
 						$newResult[$fieldAlias] = $isLastField ? $value : [];

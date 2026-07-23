@@ -31,7 +31,7 @@ class ColumnValueResolver
 		}
 
 		return match (true) {
-			is_string($resolver) && class_exists($resolver) => [new $resolver, '__invoke'],
+			is_string($resolver) && class_exists($resolver) && method_exists($resolver, '__invoke') => [new $resolver, '__invoke'],
 			is_string($resolver) && method_exists($resolverContext, $resolver) => (new ReflectionMethod(
 				$resolverContext,
 				$resolver
