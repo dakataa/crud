@@ -244,16 +244,10 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			if ($columnValueResolverCallable = $columnValueResolver?->getCallable($this->getResolverContext(), $column)) {
 				$value = call_user_func($columnValueResolverCallable, $request, $object, $column, $this->serviceContainer);
 			} elseif ($getter = $column->getGetter()) {
-				if (is_string($getter)) {
-					$getter = sprintf('get%s', (preg_replace('/^get/i', '', Container::camelize($getter))));
+				$getter = sprintf('get%s', (preg_replace('/^get/i', '', Container::camelize($getter))));
 
-					if (method_exists($object, $getter)) {
-						$value = $object->$getter();
-					}
-				}
-
-				if ($getter instanceof Closure) {
-					$value = $getter($value);
+				if (method_exists($object, $getter)) {
+					$value = $object->$getter();
 				}
 			} else {
 				if (array_key_exists($column->getAlias(), $additionalEntityFields)) {
