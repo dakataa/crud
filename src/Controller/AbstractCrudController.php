@@ -1034,7 +1034,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	/**
 	 * @throws ExceptionInterface
 	 */
-	private function response(
+	final protected function response(
 		Request $request,
 		array $data,
 		int $status = 200,
