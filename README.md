@@ -100,6 +100,81 @@ Action metadata can include permission information, but the frontend must treat 
 Every action endpoint must still enforce access on the server side when the action is executed.
 Client-side AJAX checks are useful for hiding or disabling UI controls, but they are not a replacement for backend authorization.
 
+## Response Context Resolver
+
+Use `#[ResponseContextResolver]` to add application-specific display data to a CRUD response without changing the built-in action workflow. The resolved data is added under the `context` key in both JSON responses and Twig template variables.
+
+The resolver receives the request, current action, response data collected so far, and the CRUD service container. It must return an array:
+
+```php
+use Dakataa\Crud\Attribute\Action;
+use Dakataa\Crud\Attribute\ResponseContextResolver;
+use Dakataa\Crud\Controller\AbstractCrudController;
+use Dakataa\Crud\Controller\CrudServiceContainer;
+use Symfony\Component\HttpFoundation\Request;
+
+#[ResponseContextResolver(
+    resolver: 'resolveProductContext',
+    actions: ['add', 'edit'],
+)]
+class ProductController extends AbstractCrudController
+{
+    protected function resolveProductContext(
+        Request $request,
+        Action $action,
+        array $data,
+        CrudServiceContainer $serviceContainer
+    ): array {
+        return [
+            'helpText' => 'Changes are applied immediately.',
+            'isEdit' => $action->getName() === 'edit',
+        ];
+    }
+}
+```
+
+The resulting JSON contains:
+
+```json
+{
+  "context": {
+    "helpText": "Changes are applied immediately.",
+    "isEdit": true
+  }
+}
+```
+
+The same values are available in Twig as `context.helpText` and `context.isEdit`.
+
+The attribute can also be placed directly on an action method:
+
+```php
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Routing\Attribute\Route;
+
+#[Route('/featured')]
+#[Action]
+#[ResponseContextResolver('resolveFeaturedContext')]
+public function featured(Request $request): Response
+{
+    return parent::list($request);
+}
+```
+
+`#[ResponseContextResolver]` is repeatable. Class-level resolvers run first, followed by method-level resolvers. Their results are combined with `array_replace_recursive()`, so a later resolver can override an earlier context value:
+
+```php
+#[ResponseContextResolver('resolveSharedContext')]
+#[ResponseContextResolver('resolveListContext', actions: ['list'])]
+class ProductController extends AbstractCrudController
+{
+}
+```
+
+Like the other resolver attributes, `resolver` accepts a method name on the controller, an invokable class, or another PHP callable. A resolver that returns a value other than an array causes an `UnexpectedValueException`.
+
+The resolver runs for CRUD actions that produce a standard JSON or template response, including `list`, `view`, `add`, and `edit`. Redirect and streamed actions such as `delete` and `export` do not produce response context.
+
 ## Column Value Resolver
 
 For each column, `compileEntityData()` resolves the displayed value using the following priority chain, stopping at the first one that applies:
