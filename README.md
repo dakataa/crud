@@ -104,7 +104,7 @@ Client-side AJAX checks are useful for hiding or disabling UI controls, but they
 
 Use `#[ResponseContextResolver]` to add application-specific display data to a CRUD response without changing the built-in action workflow. The resolved data is added under the `context` key in both JSON responses and Twig template variables.
 
-The resolver receives the request, current action, response data collected so far, and the CRUD service container. It must return an array:
+The resolver receives the request, current action, raw runtime context provided by the action, and the CRUD service container. It must return an array:
 
 ```php
 use Dakataa\Crud\Attribute\Action;
@@ -122,12 +122,15 @@ class ProductController extends AbstractCrudController
     protected function resolveProductContext(
         Request $request,
         Action $action,
-        array $data,
+        array $context,
         CrudServiceContainer $serviceContainer
     ): array {
+        $product = $context['object'] ?? null;
+
         return [
             'helpText' => 'Changes are applied immediately.',
             'isEdit' => $action->getName() === 'edit',
+            'productId' => $product?->getId(),
         ];
     }
 }
@@ -139,12 +142,21 @@ The resulting JSON contains:
 {
   "context": {
     "helpText": "Changes are applied immediately.",
-    "isEdit": true
+    "isEdit": true,
+    "productId": 42
   }
 }
 ```
 
 The same values are available in Twig as `context.helpText` and `context.isEdit`.
+
+The runtime context contains the original, non-normalized action data:
+
+- `list`: `items` and pagination `meta`;
+- `view`: `object`;
+- `add` and `edit`: `object` and `form`.
+
+Runtime context is available only to the resolver and is never included in the response automatically. Only the array returned by the resolver is exposed under the response's `context` key.
 
 The attribute can also be placed directly on an action method:
 

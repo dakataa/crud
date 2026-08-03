@@ -490,6 +490,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			],
 			'sort' => $sorting,
 			'action' => $this->getActions($request, true),
+		], context: [
+			'items' => $items,
+			'meta' => $meta,
 		], defaultTemplate: 'list');
 	}
 
@@ -618,7 +621,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				'acl' => $this->getACLs($request, [$object]),
 			],
 			'title' => $action?->title,
-		], defaultTemplate: 'view');
+		], context: ['object' => $object], defaultTemplate: 'view');
 	}
 
 	final protected function getMappedFields(Request $request, Action $action): Generator
@@ -883,7 +886,10 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			...(isset($redirect) ? [
 				'redirect' => $redirect,
 			] : []),
-		], $responseStatus, defaultTemplate: 'edit');
+		], $responseStatus, context: [
+			'object' => $object,
+			'form' => $form,
+		], defaultTemplate: 'edit');
 	}
 
 	/**
@@ -1000,28 +1006,29 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return $this;
 	}
 
-	private function resolveResponseContext(Request $request, array $data): array
+	private function resolveResponseContext(Request $request, array $context): array
 	{
 		$action = $this->getAction($request);
 		$resolvers = $action ? $this->getResponseContextResolvers($action) : [];
+		$resolvedContext = [];
 
 		foreach ($resolvers as $resolver) {
 			$callable = $resolver->getCallable($this->getResolverContext());
-			$resolvedContext = $callable(
+			$resolved = $callable(
 				$request,
 				$action,
-				$data,
+				$context,
 				$this->serviceContainer
 			);
 
-			if (!is_array($resolvedContext)) {
+			if (!is_array($resolved)) {
 				throw new UnexpectedValueException('Response context resolver must return an array.');
 			}
 
-			$data['context'] = array_replace_recursive($data['context'] ?? [], $resolvedContext);
+			$resolvedContext = array_replace_recursive($resolvedContext, $resolved);
 		}
 
-		return $data;
+		return $resolvedContext;
 	}
 
 	/**
@@ -1031,9 +1038,11 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		Request $request,
 		array $data,
 		int $status = 200,
+		array $context = [],
 		?string $defaultTemplate = null
 	): Response {
-		$data = $this->resolveResponseContext($request, $data);
+		$data['context'] = $this->resolveResponseContext($request, $context);
+
 		$format = $request->getPreferredFormat();
 		$templateProvider = $this->serviceContainer->templateProvider;
 
