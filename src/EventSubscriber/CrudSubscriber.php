@@ -8,16 +8,10 @@ use Dakataa\Crud\Controller\AbstractCrudController;
 use Dakataa\Crud\Controller\CrudServiceContainer;
 use Dakataa\Crud\Service\ActionCollection;
 use Dakataa\Crud\Service\CrudContext;
-use Dakataa\Crud\Twig\TemplateProvider;
-use Doctrine\ORM\EntityManagerInterface;
-use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
-use Symfony\Component\EventDispatcher\EventDispatcherInterface;
-use Symfony\Component\Form\FormFactoryInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Event\ControllerArgumentsEvent;
 use Symfony\Component\HttpKernel\Exception\HttpException;
-use Symfony\Component\Routing\RouterInterface;
 use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
@@ -26,14 +20,8 @@ class CrudSubscriber
 {
 	public function __construct(
 		protected CrudServiceContainer $crudServiceContainer,
-		protected FormFactoryInterface $formFactory,
-		protected RouterInterface $router,
-		protected EventDispatcherInterface $dispatcher,
-		protected EntityManagerInterface $entityManager,
-		protected ParameterBagInterface $parameterBag,
 		protected ActionCollection $actionCollection,
 		protected ?AuthorizationCheckerInterface $authorizationChecker = null,
-		protected ?TemplateProvider $templateProvider = null,
 	) {
 	}
 
@@ -62,15 +50,11 @@ class CrudSubscriber
 
 		if (false === is_a($controllerObject, AbstractCrudController::class, true)) {
 			$this->controller = new class (
-				$event->getController()[0],
-				$this,
-				$event
+				$event->getController()[0]
 			) extends AbstractCrudController {
 
 				public function __construct(
-					protected object $originalController,
-					protected CrudSubscriber $crudSubscriber,
-					protected ControllerArgumentsEvent $controllerEvent
+					protected object $originalController
 				) {
 				}
 

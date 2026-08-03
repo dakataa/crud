@@ -3,7 +3,6 @@
 namespace Dakataa\Crud\Controller;
 
 use BackedEnum;
-use Closure;
 use Dakataa\Crud\Attribute\ACL;
 use Dakataa\Crud\Attribute\Action;
 use Dakataa\Crud\Attribute\Column;
@@ -19,10 +18,10 @@ use Dakataa\Crud\Attribute\Enum\EntityColumnViewGroupEnum;
 use Dakataa\Crud\Attribute\PathParameterToFieldMap;
 use Dakataa\Crud\Attribute\QueryParameterToFieldMap;
 use Dakataa\Crud\Attribute\QueryResolver;
+use Dakataa\Crud\Attribute\ResponseContextResolver;
 use Dakataa\Crud\Attribute\SearchableOptions;
 use Dakataa\Crud\Security\SecuritySubject;
 use Dakataa\Crud\Service\CrudContext;
-use Dakataa\Crud\Twig\TemplateProvider;
 use Dakataa\Crud\Utils\Doctrine\Paginator;
 use Dakataa\Crud\Utils\StringHelper;
 use DateTime;
@@ -65,6 +64,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\HttpKernel\Attribute\MapQueryParameter;
+use Symfony\Component\HttpKernel\Exception\NotAcceptableHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\Routing\Attribute\Route;
@@ -73,6 +73,7 @@ use Symfony\Component\Serializer\Exception\ExceptionInterface;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Contracts\Service\Attribute\Required;
 use TypeError;
+use UnexpectedValueException;
 
 
 abstract class AbstractCrudController implements CrudControllerInterface
@@ -107,7 +108,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	private array $reflectionCache = [];
 
 
-	protected function getPHPAttributes(string $attributeFQCN, string $method = null): array
+	protected function getPHPAttributes(string $attributeFQCN, ?string $method = null): array
 	{
 		$reflectionClass = $this->getReflectionClass($this->getControllerClass());
 
@@ -117,7 +118,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		);
 	}
 
-	protected function getPHPAttribute(string $attributeClass, string $method = null): mixed
+	protected function getPHPAttribute(string $attributeClass, ?string $method = null): mixed
 	{
 		return current($this->getPHPAttributes($attributeClass, $method)) ?: null;
 	}
@@ -200,7 +201,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	protected function compileEntityData(
 		Request $request,
 		array|object $object,
-		EntityColumnViewGroupEnum|string $viewGroup = null,
+		EntityColumnViewGroupEnum|string|null $viewGroup = null,
 		bool|null $useFlatKeys = null
 	): array {
 		$additionalEntityFields = [];
@@ -242,7 +243,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 			$value = null;
 			if ($columnValueResolverCallable = $columnValueResolver?->getCallable($this->getResolverContext(), $column)) {
-				$value = call_user_func($columnValueResolverCallable, $request, $object, $column, $this->serviceContainer);
+				$value = $columnValueResolverCallable($request, $object, $column, $this->serviceContainer);
 			} elseif ($getter = $column->getGetter()) {
 				$getter = sprintf('get%s', (preg_replace('/^get/i', '', Container::camelize($getter))));
 
@@ -577,7 +578,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	 */
 	#[Route(path: '/add')]
 	#[Action]
-	public function add(Request $request, #[MapQueryParameter] bool $save = null): ?Response
+	public function add(Request $request, #[MapQueryParameter] ?bool $save = null): ?Response
 	{
 		return $this->modify($request, $this->getAction($request), save: $save ?: true);
 	}
@@ -622,12 +623,14 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 	final protected function getMappedFields(Request $request, Action $action): Generator
 	{
+		$actionMethod = $this->getActionMethod($action);
+
 		/** @var PathParameterToFieldMap[] $mappedParameters */
 		$mappedParameters = [
 			...$this->getPHPAttributes(QueryParameterToFieldMap::class),
-			...$this->getPHPAttributes(QueryParameterToFieldMap::class, $action->name),
+			...$this->getPHPAttributes(QueryParameterToFieldMap::class, $actionMethod),
 			...$this->getPHPAttributes(PathParameterToFieldMap::class),
-			...$this->getPHPAttributes(PathParameterToFieldMap::class, $action->name),
+			...$this->getPHPAttributes(PathParameterToFieldMap::class, $actionMethod),
 		];
 
 		foreach ($mappedParameters as $mappedPathParameter) {
@@ -670,7 +673,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		$request = $this->context->request;
 		$action ??= $this->getAction($request);
 
-		if (null === $entityFinder = $this->getPHPAttribute(EntityFinder::class, $action->name)) {
+		if (null === $entityFinder = $this->getPHPAttribute(EntityFinder::class, $this->getActionMethod($action))) {
 			return false;
 		}
 
@@ -682,7 +685,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				$resolverContext,
 				$finder
 			))->getClosure($resolverContext)($request, $this->serviceContainer),
-			is_callable($finder) => call_user_func($finder, $request, $this->serviceContainer),
+			is_callable($finder) => $finder($request, $this->serviceContainer),
 			default => throw new NotFoundHttpException('Invalid Entity Finder. Class or Method not found.'),
 		};
 
@@ -693,6 +696,18 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return $object;
 	}
 
+	private function getActionMethod(?Action $action = null): string
+	{
+		if ($method = $action?->getMethod()) {
+			return $method;
+		}
+
+		if (!$this->context) {
+			throw new Exception('Context is not set.');
+		}
+
+		return $this->context->method;
+	}
 
 	private function getResolverAttribute(string $attributeClass, Action|null $action = null): mixed
 	{
@@ -702,7 +717,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 		$action ??= $this->getAction($this->context->request);
 
-		return $this->getPHPAttribute($attributeClass, $action->name) ?: $this->getPHPAttribute($attributeClass);
+		return $this->getPHPAttribute($attributeClass, $this->getActionMethod($action))
+			?: $this->getPHPAttribute($attributeClass);
 	}
 
 	private function getColumnResolver(Action|null $action = null): ColumnValueResolver|null
@@ -715,9 +731,25 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return $this->getResolverAttribute(QueryResolver::class, $action);
 	}
 
+	/**
+	 * @return array<ResponseContextResolver>
+	 */
+	private function getResponseContextResolvers(Action $action): array
+	{
+		$resolvers = [
+			...$this->getPHPAttributes(ResponseContextResolver::class),
+			...$this->getPHPAttributes(ResponseContextResolver::class, $this->getActionMethod($action)),
+		];
+
+		return array_values(array_filter(
+			$resolvers,
+			fn(ResponseContextResolver $resolver) => $resolver->supports($action)
+		));
+	}
+
 	final protected function modify(
 		Request $request,
-		Action $action = null,
+		?Action $action = null,
 		mixed $id = null,
 		bool $save = true
 	): ?Response {
@@ -859,7 +891,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	 */
 	#[Route(path: '/{id}/edit')]
 	#[Action(visibility: ActionVisibilityEnum::Object)]
-	public function edit(Request $request, mixed $id = null, #[MapQueryParameter] bool $save = null): ?Response
+	public function edit(Request $request, mixed $id = null, #[MapQueryParameter] ?bool $save = null): ?Response
 	{
 		return $this->modify($request, $this->getAction($request), $id, $save ?: true);
 	}
@@ -968,32 +1000,61 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return $this;
 	}
 
+	private function resolveResponseContext(Request $request, array $data): array
+	{
+		$action = $this->getAction($request);
+		$resolvers = $action ? $this->getResponseContextResolvers($action) : [];
+
+		foreach ($resolvers as $resolver) {
+			$callable = $resolver->getCallable($this->getResolverContext());
+			$resolvedContext = $callable(
+				$request,
+				$action,
+				$data,
+				$this->serviceContainer
+			);
+
+			if (!is_array($resolvedContext)) {
+				throw new UnexpectedValueException('Response context resolver must return an array.');
+			}
+
+			$data['context'] = array_replace_recursive($data['context'] ?? [], $resolvedContext);
+		}
+
+		return $data;
+	}
 
 	/**
 	 * @throws ExceptionInterface
 	 */
-	protected function response(
+	private function response(
 		Request $request,
 		array $data,
 		int $status = 200,
-		string $defaultTemplate = null
+		?string $defaultTemplate = null
 	): Response {
-		[, $template] = explode('::', $request->get('_controller'));
+		$data = $this->resolveResponseContext($request, $data);
+		$format = $request->getPreferredFormat();
+		$templateProvider = $this->serviceContainer->templateProvider;
 
-		$format = $this->serviceContainer->templateProvider ? $request->getPreferredFormat() : 'json';
-		switch ($format) {
-			case 'json':
-			{
-				return new JsonResponse(
-					$this->serviceContainer->serializer->normalize($data), $status
-				);
-			}
-			default:
-				return new Response(
-					$this->serviceContainer->templateProvider?->render($this, $template, $data, $defaultTemplate),
-					$status
-				);
+		if ($format === 'json') {
+			return new JsonResponse(
+				$this->serviceContainer->serializer->normalize($data),
+				$status
+			);
 		}
+
+		if (!$templateProvider) {
+			throw new NotAcceptableHttpException(sprintf(
+				'Cannot render "%s" response without a template provider.',
+				$format
+			));
+		}
+
+		return new Response(
+			$templateProvider->render($this, $this->getActionMethod(), $data, $defaultTemplate),
+			$status
+		);
 	}
 
 	protected function getBatchForm(Request $request): FormInterface|null
@@ -1181,7 +1242,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 	protected function prepareSorting(
 		Request $request,
-		EntityColumnViewGroupEnum|string $viewGroup = null
+		EntityColumnViewGroupEnum|string|null $viewGroup = null
 	): array {
 		$sorting = $request->query->all('sort') ?: array_filter(
 			$request->getSession()->get(
@@ -1298,7 +1359,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	}
 
 	private function buildColumns(
-		EntityColumnViewGroupEnum|string $viewGroup = null,
+		EntityColumnViewGroupEnum|string|null $viewGroup = null,
 		bool|null $searchable = null,
 		bool $includeIdentifier = false,
 	): Generator {
@@ -1372,7 +1433,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		$action = $this->getAction($request);
 
 		if ($queryResolverCallable = $this->getQueryResolver($action)?->getCallable($this->getResolverContext(), $action)) {
-			call_user_func($queryResolverCallable, $request, $action, $query, $this->serviceContainer);
+			$queryResolverCallable($request, $action, $query, $this->serviceContainer);
 		}
 
 		$usedJoinAliases = array_map(
@@ -1380,16 +1441,18 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			array_merge([], ...array_values($query->getDQLPart('join')))
 		);
 
+		$actionMethod = $action ? $this->getActionMethod($action) : null;
+
 		/** @var PathParameterToFieldMap[] $mappedPathParameters */
 		$mappedPathParameters = [
 			...$this->getPHPAttributes(PathParameterToFieldMap::class),
-			...($action ? $this->getPHPAttributes(PathParameterToFieldMap::class, $action->name) : []),
+			...($actionMethod ? $this->getPHPAttributes(PathParameterToFieldMap::class, $actionMethod) : []),
 		];
 
 		/** @var QueryParameterToFieldMap[] $mappedQueryParameters */
 		$mappedQueryParameters = [
 			...$this->getPHPAttributes(QueryParameterToFieldMap::class),
-			...($action ? $this->getPHPAttributes(QueryParameterToFieldMap::class, $action->name) : []),
+			...($actionMethod ? $this->getPHPAttributes(QueryParameterToFieldMap::class, $actionMethod) : []),
 		];
 
 		$allParameters = array_intersect_key(
@@ -1736,7 +1799,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	{
 	}
 
-	protected function onFormTypeBeforeCreate(Request $request, $object, Action $action = null)
+	protected function onFormTypeBeforeCreate(Request $request, $object, ?Action $action = null)
 	{
 	}
 
@@ -1748,7 +1811,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	{
 	}
 
-	protected function findEntityObjectByRequest(Request $request, Action $action = null): false|object
+	protected function findEntityObjectByRequest(Request $request, ?Action $action = null): false|object
 	{
 		return false;
 	}
@@ -1758,7 +1821,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return $this->serviceContainer->entityManager->getRepository($this->getEntity(true)->getFqcn());
 	}
 
-	protected function getRoute(Request $request, string $method = null): Route
+	protected function getRoute(Request $request, ?string $method = null): Route
 	{
 		if (null !== $action = current(
 				array_values(
@@ -1804,14 +1867,21 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		);
 	}
 
-
-	public function getAction(Request $request, string $name = null): ?Action
+	public function getAction(Request $request, ?string $name = null): ?Action
 	{
-		$name ??= $this->context?->method;
+		$method = $name === null ? $this->getActionMethod() : null;
 
-		return current(
-			array_values(array_filter($this->getActions($request), fn(Action $action) => $action->getName() === $name))
-		) ?: null;
+		foreach ($this->getActions($request) as $action) {
+			$matches = $name === null
+				? $action->getMethod() === $method
+				: $action->getName() === $name;
+
+			if ($matches) {
+				return $action;
+			}
+		}
+
+		return null;
 	}
 
 	/**

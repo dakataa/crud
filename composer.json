@@ -28,5 +28,8 @@
   },
   "require-dev": {
     "symfony/maker-bundle": "^1.61"
+  },
+  "suggest": {
+    "dakataa/crud-twig": "Enables Twig template rendering"
   }
 }

@@ -4,6 +4,7 @@ namespace Dakataa\Crud\Controller;
 
 use Dakataa\Crud\Serializer\CrudSerializer;
 use Dakataa\Crud\Service\ActionCollection;
+use Dakataa\Crud\Twig\TemplateProvider;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
