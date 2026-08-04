@@ -100,6 +100,35 @@ Action metadata can include permission information, but the frontend must treat 
 Every action endpoint must still enforce access on the server side when the action is executed.
 Client-side AJAX checks are useful for hiding or disabling UI controls, but they are not a replacement for backend authorization.
 
+## Entity Finder
+
+Use `#[EntityFinder]` when an action must load its entity with custom lookup logic instead of the default repository identifier lookup. The attribute can be placed on the controller class or directly on an action method.
+
+```php
+use App\Entity\Product;
+use Dakataa\Crud\Attribute\EntityFinder;
+use Dakataa\Crud\Controller\AbstractCrudController;
+use Dakataa\Crud\Controller\CrudServiceContainer;
+use Symfony\Component\HttpFoundation\Request;
+
+#[EntityFinder('findProduct', actions: ['view', 'edit'])]
+class ProductController extends AbstractCrudController
+{
+    protected function findProduct(
+        Request $request,
+        CrudServiceContainer $serviceContainer
+    ): ?Product {
+        return $serviceContainer->entityManager
+            ->getRepository(Product::class)
+            ->findOneBy([
+                'slug' => $request->attributes->get('id'),
+            ]);
+    }
+}
+```
+
+A finder placed directly on an action method takes priority over matching class-level finders. Like the other resolver attributes, `finder` accepts a controller method name, an invokable class, or another PHP callable. The callable receives `Request` and `CrudServiceContainer` and must return an instance of the configured entity class or `null` when the entity cannot be found.
+
 ## Response Context Resolver
 
 Use `#[ResponseContextResolver]` to add application-specific display data to a CRUD response without changing the built-in action workflow. The resolved data is added under the `context` key in both JSON responses and Twig template variables.

@@ -667,7 +667,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 	}
 
-	private function getEntityWithFinder(Action|null $action = null): object|null|false
+	private function getEntityWithFinder(?Action $action = null): object|null|false
 	{
 		if (!$this->context) {
 			throw new Exception('Context is not set.');
@@ -676,21 +676,17 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		$request = $this->context->request;
 		$action ??= $this->getAction($request);
 
-		if (null === $entityFinder = $this->getPHPAttribute(EntityFinder::class, $this->getActionMethod($action))) {
+		if (!$action) {
 			return false;
 		}
 
-		$finder = $entityFinder->finder;
-		$resolverContext = $this->getResolverContext();
-		$object = match (true) {
-			is_string($finder) && class_exists($finder) => (new $finder())($request, $this->serviceContainer),
-			is_string($finder) && method_exists($resolverContext, $finder) => (new ReflectionMethod(
-				$resolverContext,
-				$finder
-			))->getClosure($resolverContext)($request, $this->serviceContainer),
-			is_callable($finder) => $finder($request, $this->serviceContainer),
-			default => throw new NotFoundHttpException('Invalid Entity Finder. Class or Method not found.'),
-		};
+		$entityFinder = $this->getResolverAttribute(EntityFinder::class, $action);
+		if (!$entityFinder?->supports($action)) {
+			return false;
+		}
+
+		$callable = $entityFinder->getCallable($this->getResolverContext());
+		$object = $callable($request, $this->serviceContainer);
 
 		if ($object && false === is_a($object, $this->getEntity(true)->getFqcn(), true)) {
 			throw new NotFoundHttpException('Invalid Entity Finder. Method must return an object of the same class.');
@@ -1856,7 +1852,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	{
 		return array_values(
 			array_filter(
-				$this->actions ?: $this->actions = array_filter(
+				$this->actions ??= array_filter(
 					iterator_to_array(
 						$this->serviceContainer->actionCollection->load(
 							$this->getControllerClass(),

@@ -3,21 +3,39 @@
 namespace Dakataa\Crud\Attribute;
 
 use Attribute;
+use ReflectionMethod;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
-#[Attribute(Attribute::TARGET_METHOD)]
+#[Attribute(Attribute::TARGET_METHOD | Attribute::TARGET_CLASS)]
 class EntityFinder
 {
 	/**
-	 * Resolved in this order:
-	 * - a class-string with an __invoke(Request, CrudServiceContainer) method
-	 * - a method on the controller instance (called as $this->$finder(...))
-	 * - a static method on the controller class (called as ControllerClass::$finder(...))
-	 * - any other callable, e.g. [SomeClass::class, 'staticMethod']
 	 * @param string|array $finder
+	 * @param array<string>|null $actions
 	 */
 	public function __construct(
-		public string|array $finder
+		public string|array $finder,
+		public ?array $actions = null
 	) {
 	}
 
+	public function supports(Action $action): bool
+	{
+		return !$this->actions || in_array($action->getName(), $this->actions, true);
+	}
+
+	public function getCallable(object $resolverContext): callable
+	{
+		$finder = $this->finder;
+
+		return match (true) {
+			is_string($finder) && class_exists($finder) && method_exists($finder, '__invoke') => [new $finder, '__invoke'],
+			is_string($finder) && method_exists($resolverContext, $finder) => (new ReflectionMethod(
+				$resolverContext,
+				$finder
+			))->getClosure($resolverContext),
+			is_callable($finder) => $finder,
+			default => throw new NotFoundHttpException('Invalid Entity Finder. Class or Method not found.'),
+		};
+	}
 }
