@@ -783,7 +783,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	final protected function modify(
 		Request $request,
 		?Action $action = null,
-		mixed $id = null,
+		string|int|null $id = null,
 		bool $save = true
 	): ?Response {
 		if (!$action) {
@@ -1705,7 +1705,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 	}
 
-	public function getEntityIdentifierPrepare(mixed $id): array
+	public function getEntityIdentifierPrepare(string|int $id): array
 	{
 		return array_combine(
 			$this->getEntityClassMetadata()->getIdentifier(),
