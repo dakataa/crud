@@ -2,14 +2,12 @@
 
 namespace Dakataa\Crud\EventSubscriber;
 
-use Dakataa\Crud\Attribute\Action;
 use Dakataa\Crud\Attribute\LoadAction;
 use Dakataa\Crud\Controller\AbstractCrudController;
 use Dakataa\Crud\Controller\CrudServiceContainer;
 use Dakataa\Crud\Service\ActionCollection;
 use Dakataa\Crud\Service\CrudContext;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
-use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Event\ControllerArgumentsEvent;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
@@ -67,16 +65,6 @@ class CrudSubscriber
 				{
 					return $this->originalController;
 				}
-
-				public function buildFormTypeOptions(Request $request, Action $action, array $options): array
-				{
-					if (method_exists($this->originalController, 'buildFormTypeOptions')) {
-						return $this->originalController->buildFormTypeOptions($request, $action, $options);
-					}
-
-					return parent::buildFormTypeOptions($request, $action, $options);
-				}
-
 			};
 
 			$this->controller->setServiceContainer($this->crudServiceContainer);

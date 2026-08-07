@@ -7,8 +7,6 @@ use Dakataa\Crud\Attribute\ACL;
 use Dakataa\Crud\Attribute\Action;
 use Dakataa\Crud\Attribute\Column;
 use Dakataa\Crud\Attribute\Entity;
-use Dakataa\Crud\Attribute\ColumnValueResolver;
-use Dakataa\Crud\Attribute\EntityFinder;
 use Dakataa\Crud\Attribute\EntityGroup;
 use Dakataa\Crud\Attribute\EntityJoinColumn;
 use Dakataa\Crud\Attribute\EntitySort;
@@ -17,8 +15,14 @@ use Dakataa\Crud\Attribute\Enum\ActionVisibilityEnum;
 use Dakataa\Crud\Attribute\Enum\EntityColumnViewGroupEnum;
 use Dakataa\Crud\Attribute\PathParameterToFieldMap;
 use Dakataa\Crud\Attribute\QueryParameterToFieldMap;
-use Dakataa\Crud\Attribute\QueryResolver;
-use Dakataa\Crud\Attribute\ResponseContextResolver;
+use Dakataa\Crud\Attribute\Resolver\ActionResolverInterface;
+use Dakataa\Crud\Attribute\Resolver\ColumnResolverInterface;
+use Dakataa\Crud\Attribute\Resolver\ColumnValueResolver;
+use Dakataa\Crud\Attribute\Resolver\EntityResolver;
+use Dakataa\Crud\Attribute\Resolver\FormTypeOptionsResolver;
+use Dakataa\Crud\Attribute\Resolver\QueryResolver;
+use Dakataa\Crud\Attribute\Resolver\ResolverInterface;
+use Dakataa\Crud\Attribute\Resolver\ResponseContextResolver;
 use Dakataa\Crud\Attribute\SearchableOptions;
 use Dakataa\Crud\Security\SecuritySubject;
 use Dakataa\Crud\Service\CrudContext;
@@ -229,9 +233,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 
 
-		$columnValueResolver = $this->getColumnResolver();
-
-		$getValue = function (object|null $object, string $field, Column $column) use ($request, $additionalEntityFields, $columnValueResolver) {
+		$getValue = function (object|null $object, string $field, Column $column) use ($request, $additionalEntityFields) {
 			if (!$object) {
 				return null;
 			}
@@ -242,7 +244,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 
 			$value = null;
-			if ($columnValueResolverCallable = $columnValueResolver?->getCallable($this->getResolverContext(), $column)) {
+			if ($columnValueResolver = $this->getResolver(ColumnValueResolver::class, $column)) {
+				$columnValueResolverCallable = $columnValueResolver->getCallable($this->getResolverContext());
 				$value = $columnValueResolverCallable($request, $object, $column, $this->serviceContainer);
 			} elseif ($getter = $column->getGetter()) {
 				$getter = sprintf('get%s', (preg_replace('/^get/i', '', Container::camelize($getter))));
@@ -680,16 +683,16 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			return false;
 		}
 
-		$entityFinder = $this->getResolverAttribute(EntityFinder::class, $action);
-		if (!$entityFinder?->supports($action)) {
+		$entityResolver = $this->getResolver(EntityResolver::class, $action);
+		if (!$entityResolver) {
 			return false;
 		}
 
-		$callable = $entityFinder->getCallable($this->getResolverContext());
+		$callable = $entityResolver->getCallable($this->getResolverContext());
 		$object = $callable($request, $this->serviceContainer);
 
 		if ($object && false === is_a($object, $this->getEntity(true)->getFqcn(), true)) {
-			throw new NotFoundHttpException('Invalid Entity Finder. Method must return an object of the same class.');
+			throw new NotFoundHttpException('Invalid Entity Resolver. Method must return an object of the same class.');
 		}
 
 		return $object;
@@ -708,42 +711,73 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return $this->context->method;
 	}
 
-	private function getResolverAttribute(string $attributeClass, Action|null $action = null): mixed
+	/**
+	 * @template T of ResolverInterface
+	 * @param class-string<T> $attributeClass
+	 * @return list<T>
+	 * @throws Exception
+	 */
+	private function getResolvers(string $attributeClass, Action|Column|null $supportContext = null): array
 	{
 		if (!$this->context) {
 			throw new Exception('Context is not set.');
 		}
 
-		$action ??= $this->getAction($this->context->request);
-
-		return $this->getPHPAttribute($attributeClass, $this->getActionMethod($action))
-			?: $this->getPHPAttribute($attributeClass);
-	}
-
-	private function getColumnResolver(Action|null $action = null): ColumnValueResolver|null
-	{
-		return $this->getResolverAttribute(ColumnValueResolver::class, $action);
-	}
-
-	private function getQueryResolver(Action|null $action = null): QueryResolver|null
-	{
-		return $this->getResolverAttribute(QueryResolver::class, $action);
-	}
-
-	/**
-	 * @return array<ResponseContextResolver>
-	 */
-	private function getResponseContextResolvers(Action $action): array
-	{
+		$action = $supportContext instanceof Action
+			? $supportContext
+			: $this->getAction($this->context->request);
 		$resolvers = [
-			...$this->getPHPAttributes(ResponseContextResolver::class),
-			...$this->getPHPAttributes(ResponseContextResolver::class, $this->getActionMethod($action)),
+			...$this->getPHPAttributes($attributeClass),
+			...$this->getPHPAttributes($attributeClass, $this->getActionMethod($action)),
 		];
 
 		return array_values(array_filter(
 			$resolvers,
-			fn(ResponseContextResolver $resolver) => $resolver->supports($action)
+			fn(ResolverInterface $resolver) => match (true) {
+				$resolver instanceof ActionResolverInterface => $action && $resolver->supports($action),
+				$resolver instanceof ColumnResolverInterface => $supportContext instanceof Column
+					&& $resolver->supports($supportContext),
+				default => true,
+			}
 		));
+	}
+
+	/**
+	 * @template T of ResolverInterface
+	 * @param class-string<T> $attributeClass
+	 * @return T|null
+	 * @throws Exception
+	 */
+	private function getResolver(string $attributeClass, Action|Column|null $supportContext = null): ?ResolverInterface
+	{
+		$resolvers = $this->getResolvers($attributeClass, $supportContext);
+
+		return $resolvers[array_key_last($resolvers)] ?? null;
+	}
+
+	private function resolveFormTypeOptions(
+		Request $request,
+		Action $action,
+		?object $object,
+		array $options
+	): array
+	{
+		foreach ($this->getResolvers(FormTypeOptionsResolver::class, $action) as $resolver) {
+			$callable = $resolver->getCallable($this->getResolverContext());
+			$options = $callable(
+				$request,
+				$action,
+				$object,
+				$options,
+				$this->serviceContainer
+			);
+
+			if (!is_array($options)) {
+				throw new UnexpectedValueException('Form type options resolver must return an array.');
+			}
+		}
+
+		return $options;
 	}
 
 	final protected function modify(
@@ -802,7 +836,12 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			'action' => $request->getUri(),
 			'method' => Request::METHOD_POST,
 			'csrf_protection' => false,
-		], $this->buildFormTypeOptions($request, $action, $this->getEntityType()?->getOptions() ?: []));
+		], $this->resolveFormTypeOptions(
+			$request,
+			$action,
+			$object,
+			$this->getEntityType()?->getOptions() ?: []
+		));
 
 		$this->onFormTypeBeforeCreate($request, $object, $action);
 		$form = $this->serviceContainer->formFactory->create(
@@ -1005,10 +1044,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	private function resolveResponseContext(Request $request, array $context): array
 	{
 		$action = $this->getAction($request);
-		$resolvers = $action ? $this->getResponseContextResolvers($action) : [];
 		$resolvedContext = [];
 
-		foreach ($resolvers as $resolver) {
+		foreach ($this->getResolvers(ResponseContextResolver::class, $action) as $resolver) {
 			$callable = $resolver->getCallable($this->getResolverContext());
 			$resolved = $callable(
 				$request,
@@ -1437,7 +1475,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		$sortingFields = array_filter($this->prepareSorting($request, $viewGroup));
 		$action = $this->getAction($request);
 
-		if ($queryResolverCallable = $this->getQueryResolver($action)?->getCallable($this->getResolverContext(), $action)) {
+		if ($queryResolverCallable = $this->getResolver(QueryResolver::class, $action)?->getCallable($this->getResolverContext())) {
 			$queryResolverCallable($request, $action, $query, $this->serviceContainer);
 		}
 
@@ -1793,11 +1831,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		$controller_name = strtolower(str_replace('Controller', '', end($split)));
 
 		return Container::underscore($controller_name);
-	}
-
-	protected function buildFormTypeOptions(Request $request, Action $action, array $options): array
-	{
-		return $options;
 	}
 
 	protected function onFormTypeCreate(Request $request, Action $action, FormInterface $type, object|null $object)

@@ -62,7 +62,7 @@ with ReactJS Package [@dakataa/crud-react](https://github.com/dakataa/crud-react
    If you want to customize the initial query, add a `#[QueryResolver]` attribute to your controller (or to a specific action method). It is resolved before the query is executed and receives the current CRUD action.
 
    ```php
-   use Dakataa\Crud\Attribute\QueryResolver;
+   use Dakataa\Crud\Attribute\Resolver\QueryResolver;
    use Dakataa\Crud\Controller\CrudServiceContainer;
 
    #[Route('/product')]
@@ -100,18 +100,18 @@ Action metadata can include permission information, but the frontend must treat 
 Every action endpoint must still enforce access on the server side when the action is executed.
 Client-side AJAX checks are useful for hiding or disabling UI controls, but they are not a replacement for backend authorization.
 
-## Entity Finder
+## Entity Resolver
 
-Use `#[EntityFinder]` when an action must load its entity with custom lookup logic instead of the default repository identifier lookup. The attribute can be placed on the controller class or directly on an action method.
+Use `#[EntityResolver]` when an action must load its entity with custom lookup logic instead of the default repository identifier lookup. The attribute can be placed on the controller class or directly on an action method.
 
 ```php
 use App\Entity\Product;
-use Dakataa\Crud\Attribute\EntityFinder;
+use Dakataa\Crud\Attribute\Resolver\EntityResolver;
 use Dakataa\Crud\Controller\AbstractCrudController;
 use Dakataa\Crud\Controller\CrudServiceContainer;
 use Symfony\Component\HttpFoundation\Request;
 
-#[EntityFinder('findProduct', actions: ['view', 'edit'])]
+#[EntityResolver('findProduct', actions: ['view', 'edit'])]
 class ProductController extends AbstractCrudController
 {
     protected function findProduct(
@@ -127,7 +127,7 @@ class ProductController extends AbstractCrudController
 }
 ```
 
-A finder placed directly on an action method takes priority over matching class-level finders. Like the other resolver attributes, `finder` accepts a controller method name, an invokable class, or another PHP callable. The callable receives `Request` and `CrudServiceContainer` and must return an instance of the configured entity class or `null` when the entity cannot be found.
+An entity resolver can be limited to specific actions with `actions: [...]`. For the current action, a matching method-level resolver takes priority; when there is none, the matching class-level resolver is used. Like the other resolver attributes, `resolver` accepts a controller method name, an invokable class, or another PHP callable. The callable receives `Request` and `CrudServiceContainer` and must return an instance of the configured entity class or `null` when the entity cannot be found.
 
 ## Response Context Resolver
 
@@ -137,7 +137,7 @@ The resolver receives the request, current action, raw runtime context provided 
 
 ```php
 use Dakataa\Crud\Attribute\Action;
-use Dakataa\Crud\Attribute\ResponseContextResolver;
+use Dakataa\Crud\Attribute\Resolver\ResponseContextResolver;
 use Dakataa\Crud\Controller\AbstractCrudController;
 use Dakataa\Crud\Controller\CrudServiceContainer;
 use Symfony\Component\HttpFoundation\Request;
@@ -216,6 +216,42 @@ Like the other resolver attributes, `resolver` accepts a method name on the cont
 
 The resolver runs for CRUD actions that produce a standard JSON or template response, including `list`, `view`, `add`, and `edit`. Redirect and streamed actions such as `delete` and `export` do not produce response context.
 
+## Form Type Options Resolver
+
+Use `#[FormTypeOptionsResolver]` to customize the options passed to the configured Symfony form type. The resolver receives the request, current action, current entity object, current options, and the CRUD service container, and must return the complete options array:
+
+```php
+use App\Entity\Product;
+use Dakataa\Crud\Attribute\Action;
+use Dakataa\Crud\Attribute\Resolver\FormTypeOptionsResolver;
+use Dakataa\Crud\Controller\AbstractCrudController;
+use Dakataa\Crud\Controller\CrudServiceContainer;
+use Symfony\Component\HttpFoundation\Request;
+
+#[FormTypeOptionsResolver(
+    resolver: 'resolveFormTypeOptions',
+    actions: ['add', 'edit'],
+)]
+class ProductController extends AbstractCrudController
+{
+    protected function resolveFormTypeOptions(
+        Request $request,
+        Action $action,
+        ?Product $product,
+        array $options,
+        CrudServiceContainer $serviceContainer
+    ): array {
+        $options['validation_groups'] = $product?->getId() === null
+            ? ['Default', 'create']
+            : ['Default', 'update'];
+
+        return $options;
+    }
+}
+```
+
+The attribute is repeatable and can be placed on the controller class or on an action method. Matching class-level resolvers run first, followed by matching method-level resolvers. Each resolver receives the options returned by the previous one, so later resolvers can add, replace, or remove options. As with the other resolver attributes, `resolver` accepts a controller method name, an invokable class, or another PHP callable. Returning a value other than an array causes an `UnexpectedValueException`.
+
 ## Column Value Resolver
 
 For each column, `compileEntityData()` resolves the displayed value using the following priority chain, stopping at the first one that applies:
@@ -228,7 +264,7 @@ For each column, `compileEntityData()` resolves the displayed value using the fo
 By default (steps 2-4), you don't need to do anything — columns resolve themselves from the entity. Use `#[ColumnValueResolver]` when a column's value needs custom logic (formatting, computed values, cross-entity lookups, etc.):
 
 ```php
-use Dakataa\Crud\Attribute\ColumnValueResolver;
+use Dakataa\Crud\Attribute\Resolver\ColumnValueResolver;
 use Dakataa\Crud\Controller\CrudServiceContainer;
 
 #[Route('/product')]

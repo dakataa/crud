@@ -1,27 +1,19 @@
 <?php
 
-namespace Dakataa\Crud\Attribute;
+namespace Dakataa\Crud\Attribute\Resolver;
 
-use Attribute;
+use ReflectionClass;
 use ReflectionMethod;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
-#[Attribute(Attribute::TARGET_METHOD | Attribute::TARGET_CLASS | Attribute::IS_REPEATABLE)]
-class ResponseContextResolver
+abstract class AbstractResolver implements ResolverInterface
 {
 	/**
 	 * @param string|array $resolver
-	 * @param array<string>|null $actions
 	 */
 	public function __construct(
-		public string|array $resolver,
-		public ?array $actions = null
+		public string|array $resolver
 	) {
-	}
-
-	public function supports(Action $action): bool
-	{
-		return !$this->actions || in_array($action->getName(), $this->actions, true);
 	}
 
 	public function getCallable(object $resolverContext): callable
@@ -35,7 +27,10 @@ class ResponseContextResolver
 				$resolver
 			))->getClosure($resolverContext),
 			is_callable($resolver) => $resolver,
-			default => throw new NotFoundHttpException('Invalid Response Context Resolver. Class or Method not found.'),
+			default => throw new NotFoundHttpException(sprintf(
+				'Invalid %s. Class or Method not found.',
+				preg_replace('/(?<!^)([A-Z])/', ' $1', (new ReflectionClass($this))->getShortName())
+			)),
 		};
 	}
 }
