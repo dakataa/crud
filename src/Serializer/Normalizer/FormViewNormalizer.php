@@ -8,6 +8,7 @@ use Symfony\Component\Form\ChoiceList\View\ChoiceGroupView;
 use Symfony\Component\Form\ChoiceList\View\ChoiceView;
 use Symfony\Component\Form\FormErrorIterator;
 use Symfony\Component\Form\FormView;
+use Symfony\Component\Serializer\Exception\ExceptionInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerAwareInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerAwareTrait;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
@@ -61,7 +62,7 @@ class FormViewNormalizer implements NormalizerInterface, NormalizerAwareInterfac
 	 * @param string|null $format
 	 * @param array $context
 	 * @return array
-	 * @throws \Symfony\Component\Serializer\Exception\ExceptionInterface
+	 * @throws ExceptionInterface
 	 */
 	public function normalize(mixed $object, ?string $format = null, array $context = []): array
 	{
@@ -87,19 +88,23 @@ class FormViewNormalizer implements NormalizerInterface, NormalizerAwareInterfac
 			, []
 		) ?: null;
 
-		$data = ($rawChoices ? array_values(
-			array_map(fn(ChoiceView $c) => $c->value,
-				array_filter(
-					$rawChoices,
-					fn(ChoiceView $c) => in_array(
-						$c->data,
-						$data instanceof ArrayCollection ? $data->getValues() : (is_array($data) ? $data : [$data]),
-						true
+		if ($rawChoices) {
+			$data = array_values(
+				array_map(fn(ChoiceView $c) => $c->value,
+					array_filter(
+						$rawChoices,
+						fn(ChoiceView $c) => in_array(
+							$c->data,
+							$data instanceof ArrayCollection ? $data->getValues() : (is_array($data) ? $data : [$data]),
+							true
+						)
 					)
-				))
-		) ?: null : $data);
-		if (!$multiple && is_array($data)) {
-			$data = array_shift($data);
+				)
+			) ?: null;
+
+			if (!$multiple && is_array($data)) {
+				$data = array_shift($data);
+			}
 		}
 
 		$type = array_reduce(
