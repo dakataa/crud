@@ -19,6 +19,8 @@ use Dakataa\Crud\Attribute\Resolver\ActionResolverInterface;
 use Dakataa\Crud\Attribute\Resolver\ColumnResolverInterface;
 use Dakataa\Crud\Attribute\Resolver\ColumnValueResolver;
 use Dakataa\Crud\Attribute\Resolver\EntityResolver;
+use Dakataa\Crud\Attribute\Resolver\FormSubmitResolver;
+use Dakataa\Crud\Attribute\Resolver\FormSuccessResolver;
 use Dakataa\Crud\Attribute\Resolver\FormTypeOptionsResolver;
 use Dakataa\Crud\Attribute\Resolver\QueryResolver;
 use Dakataa\Crud\Attribute\Resolver\ResolverInterface;
@@ -67,7 +69,6 @@ use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
-use Symfony\Component\HttpKernel\Attribute\MapQueryParameter;
 use Symfony\Component\HttpKernel\Exception\NotAcceptableHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\PropertyAccess\PropertyAccess;
@@ -584,9 +585,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	 */
 	#[Route(path: '/add')]
 	#[Action]
-	public function add(Request $request, #[MapQueryParameter] ?bool $save = null): ?Response
+	public function add(Request $request): ?Response
 	{
-		return $this->modify($request, $this->getAction($request), save: $save ?: true);
+		return $this->modify($request, $this->getAction($request));
 	}
 
 	/**
@@ -780,11 +781,27 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return $options;
 	}
 
+	private function resolveFormSubmit(Request $request, Action $action, FormInterface $form): void
+	{
+		foreach ($this->getResolvers(FormSubmitResolver::class, $action) as $resolver) {
+			$callable = $resolver->getCallable($this->getResolverContext());
+			$callable($request, $action, $form, $this->serviceContainer);
+		}
+	}
+
+	private function resolveFormSuccess(Request $request, Action $action, FormInterface $form): void
+	{
+		foreach ($this->getResolvers(FormSuccessResolver::class, $action) as $resolver) {
+			$callable = $resolver->getCallable($this->getResolverContext());
+			$callable($request, $action, $form, $this->serviceContainer);
+		}
+	}
+
 	final protected function modify(
 		Request $request,
 		?Action $action = null,
 		string|int|null $id = null,
-		bool $save = true
+		?bool $persist = null
 	): ?Response {
 		if (!$action) {
 			throw new Exception('This Action is not enabled in the list of Entity Actions.');
@@ -796,12 +813,13 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 		$messages = [];
 		$object = null;
+		$persist ??= null !== $this->getEntity();
 
 		$entityFinderObject = $this->getEntityWithFinder($action);
 		if ($entityFinderObject !== false) {
 			$object = $entityFinderObject;
 		} else {
-			if ($id) {
+			if ($id && $this->getEntity()) {
 				$object = $this->getEntityRepository()->find($this->getEntityIdentifierPrepare($id));
 			}
 		}
@@ -860,20 +878,22 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				$form->submit([]);
 			}
 
-			if ($form->isSubmitted() && $form->isValid() && $save) {
-				$this->beforeFormSave($request, $form);
-				if ($this->getEntity()) {
+			if ($form->isSubmitted() && $form->isValid()) {
+				$this->resolveFormSubmit($request, $action, $form);
+				if ($persist) {
 					$this->serviceContainer->entityManager->persist($form->getData());
 					$this->serviceContainer->entityManager->flush();
 				}
 
 				$object = $form->getData();
 
-				$this->afterFormSave($request, $form);
+				$this->resolveFormSuccess($request, $action, $form);
 
 				$messages = [
 					'success' => [
-						$this->getEntityType()?->getSuccessMessage() ?: 'Item was saved successfully',
+						$this->getEntityType()?->getSuccessMessage() ?: (
+							$this->getEntity() ? 'Item was saved successfully' : 'Form submitted successfully'
+						),
 					],
 				];
 
@@ -883,14 +903,19 @@ abstract class AbstractCrudController implements CrudControllerInterface
 					);
 					$routeVariables = $route->compile()->getPathVariables();
 
+					$redirectParameters = array_intersect_key(
+						$request->attributes->all(),
+						array_flip($routeVariables)
+					);
+					if ($this->getEntity() && in_array('id', $routeVariables, true)) {
+						$redirectParameters['id'] = $this->getEntityIdentifierValueFromObject($object);
+					}
+
 					$redirect = [
 						'route' => $this->serviceContainer->router->getRouteCollection()->get(
 							$action->getRoute()->getName()
 						),
-						'parameters' => [
-							'id' => $this->getEntityIdentifierValueFromObject($object),
-							...(array_intersect_key($request->attributes->all(), array_flip($routeVariables))),
-						],
+						'parameters' => $redirectParameters,
 					];
 
 					$redirect['url'] = $this->serviceContainer->router->generate(
@@ -907,11 +932,13 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			}
 		}
 
-		$id ??= $this->getEntityIdentifierValueFromObject($object);
+		if ($this->getEntity()) {
+			$id ??= $this->getEntityIdentifierValueFromObject($object);
+		}
 
 		return $this->response($request, [
 			'title' => $action->title ?: ($id ? 'Edit' : 'New'),
-			...($id ? ['object' => $this->compileEntityData($request, $object)] : []),
+			...($id && $this->getEntity() ? ['object' => $this->compileEntityData($request, $object)] : []),
 			'form' => [
 				'modify' => [
 					'view' => $form->createView(),
@@ -932,9 +959,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	 */
 	#[Route(path: '/{id}/edit')]
 	#[Action(visibility: ActionVisibilityEnum::Object)]
-	public function edit(Request $request, mixed $id = null, #[MapQueryParameter] ?bool $save = null): ?Response
+	public function edit(Request $request, mixed $id = null): ?Response
 	{
-		return $this->modify($request, $this->getAction($request), $id, $save ?: true);
+		return $this->modify($request, $this->getAction($request), $id);
 	}
 
 	#[Route(path: '/{id}/delete', methods: ['DELETE', 'OPTIONS'])]
@@ -1838,14 +1865,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	}
 
 	protected function onFormTypeBeforeCreate(Request $request, $object, ?Action $action = null)
-	{
-	}
-
-	protected function beforeFormSave(Request $request, FormInterface $form)
-	{
-	}
-
-	protected function afterFormSave(Request $request, FormInterface $form)
 	{
 	}
 

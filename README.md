@@ -252,6 +252,99 @@ class ProductController extends AbstractCrudController
 
 The attribute is repeatable and can be placed on the controller class or on an action method. Matching class-level resolvers run first, followed by matching method-level resolvers. Each resolver receives the options returned by the previous one, so later resolvers can add, replace, or remove options. As with the other resolver attributes, `resolver` accepts a controller method name, an invokable class, or another PHP callable. Returning a value other than an array causes an `UnexpectedValueException`.
 
+## Form Submit Resolvers
+
+Use `#[FormSubmitResolver]` and `#[FormSuccessResolver]` to run custom logic for a valid submitted form without coupling that logic to Doctrine persistence.
+
+For a valid form, the lifecycle is:
+
+1. All matching `FormSubmitResolver` callbacks run.
+2. If the controller has an `#[Entity]`, the form data is persisted and flushed.
+3. All matching `FormSuccessResolver` callbacks run.
+4. The success message and optional redirect response are created.
+
+For an invalid form neither resolver is called. An exception from a resolver interrupts the remaining lifecycle and is not converted into a successful form response.
+
+Both resolvers receive the request, current action, submitted form, and CRUD service container:
+
+```php
+use Dakataa\Crud\Attribute\Action;
+use Dakataa\Crud\Attribute\Resolver\FormSubmitResolver;
+use Dakataa\Crud\Attribute\Resolver\FormSuccessResolver;
+use Dakataa\Crud\Controller\AbstractCrudController;
+use Dakataa\Crud\Controller\CrudServiceContainer;
+use Symfony\Component\Form\FormInterface;
+use Symfony\Component\HttpFoundation\Request;
+
+#[FormSubmitResolver('prepareFormData', actions: ['add', 'edit'])]
+#[FormSuccessResolver('handleSuccessfulSubmit', actions: ['add'])]
+class ProductController extends AbstractCrudController
+{
+    protected function prepareFormData(
+        Request $request,
+        Action $action,
+        FormInterface $form,
+        CrudServiceContainer $serviceContainer
+    ): void {
+        // The form is valid, but an entity has not been flushed yet.
+    }
+
+    protected function handleSuccessfulSubmit(
+        Request $request,
+        Action $action,
+        FormInterface $form,
+        CrudServiceContainer $serviceContainer
+    ): void {
+        $data = $form->getData();
+
+        // This also works for forms backed by an array or DTO instead of an entity.
+    }
+}
+```
+
+Resolver callbacks should return `void`; any returned value is ignored. The attributes are repeatable and can be placed on the controller class or directly on an action method. Matching class-level resolvers run first, followed by matching method-level resolvers. Within each level, resolvers run in declaration order. Use the optional `actions` argument to limit a resolver to specific CRUD actions.
+
+### Forms Without an Entity
+
+An `#[EntityType]` can be used without an `#[Entity]`. In that case the valid form is not passed to Doctrine, but both resolver phases still run. This is useful for contact forms, imports, commands, searches, and forms backed by an array or DTO:
+
+```php
+use App\Form\ContactType;
+use Dakataa\Crud\Attribute\Action;
+use Dakataa\Crud\Attribute\EntityType;
+use Dakataa\Crud\Attribute\Resolver\FormSuccessResolver;
+use Dakataa\Crud\Controller\AbstractCrudController;
+use Dakataa\Crud\Controller\CrudServiceContainer;
+use Symfony\Component\Form\FormInterface;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\Routing\Attribute\Route;
+
+#[Route('/contact')]
+#[EntityType(ContactType::class, successMessage: 'Message sent successfully')]
+#[FormSuccessResolver('sendMessage', actions: ['add'])]
+class ContactController extends AbstractCrudController
+{
+    protected function sendMessage(
+        Request $request,
+        Action $action,
+        FormInterface $form,
+        CrudServiceContainer $serviceContainer
+    ): void {
+        $data = $form->getData();
+        // Send the message or dispatch an application command.
+    }
+}
+```
+
+When no custom success message is configured, entity forms use `Item was saved successfully`, while forms without an entity use `Form submitted successfully`.
+
+### Migrating From Form Save Hooks
+
+The former `beforeFormSave()` and `afterFormSave()` controller hooks have been removed. Replace overrides as follows:
+
+- `beforeFormSave()` → `#[FormSubmitResolver]`
+- `afterFormSave()` → `#[FormSuccessResolver]`
+
 ## Column Value Resolver
 
 For each column, `compileEntityData()` resolves the displayed value using the following priority chain, stopping at the first one that applies:
