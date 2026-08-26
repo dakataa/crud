@@ -18,6 +18,7 @@ use Dakataa\Crud\Attribute\QueryParameterToFieldMap;
 use Dakataa\Crud\Attribute\Resolver\ActionResolverInterface;
 use Dakataa\Crud\Attribute\Resolver\ColumnResolverInterface;
 use Dakataa\Crud\Attribute\Resolver\ColumnValueResolver;
+use Dakataa\Crud\Attribute\Resolver\ColumnVisibilityResolver;
 use Dakataa\Crud\Attribute\Resolver\EntityResolver;
 use Dakataa\Crud\Attribute\Resolver\FormSubmitResolver;
 use Dakataa\Crud\Attribute\Resolver\FormSuccessResolver;
@@ -112,6 +113,11 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 	private array $reflectionCache = [];
 
+	/**
+	 * @var array<class-string<ResolverInterface>, array<string, list<ResolverInterface>>>
+	 */
+	private array $resolverAttributeCache = [];
+
 
 	protected function getPHPAttributes(string $attributeFQCN, ?string $method = null): array
 	{
@@ -130,6 +136,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 	public function setContext(CrudContext $context): void
 	{
+		$this->resolverAttributeCache = [];
 		$this->context = $context;
 		$this->entity[$context->method] ??= $this->resolveEntity($context->method);
 
@@ -716,6 +723,17 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	 * @template T of ResolverInterface
 	 * @param class-string<T> $attributeClass
 	 * @return list<T>
+	 */
+	private function getResolverAttributes(string $attributeClass, ?string $method = null): array
+	{
+		return $this->resolverAttributeCache[$attributeClass][$method] ??=
+			$this->getPHPAttributes($attributeClass, $method);
+	}
+
+	/**
+	 * @template T of ResolverInterface
+	 * @param class-string<T> $attributeClass
+	 * @return list<T>
 	 * @throws Exception
 	 */
 	private function getResolvers(string $attributeClass, Action|Column|null $supportContext = null): array
@@ -728,8 +746,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			? $supportContext
 			: $this->getAction($this->context->request);
 		$resolvers = [
-			...$this->getPHPAttributes($attributeClass),
-			...$this->getPHPAttributes($attributeClass, $this->getActionMethod($action)),
+			...$this->getResolverAttributes($attributeClass),
+			...$this->getResolverAttributes($attributeClass, $this->getActionMethod($action)),
 		];
 
 		return array_values(array_filter(
@@ -754,6 +772,34 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		$resolvers = $this->getResolvers($attributeClass, $supportContext);
 
 		return $resolvers[array_key_last($resolvers)] ?? null;
+	}
+
+	private function isColumnVisibleByResolver(Column $column): bool
+	{
+		if (!$this->context) {
+			throw new Exception('Context is not set.');
+		}
+
+		$resolver = $this->getResolver(ColumnVisibilityResolver::class, $column);
+		if (!$resolver) {
+			return true;
+		}
+
+		$callable = $resolver->getCallable($this->getResolverContext());
+		$visible = $callable(
+			$this->context->request,
+			$column,
+			$this->serviceContainer
+		);
+
+		if (!is_bool($visible)) {
+			throw new UnexpectedValueException(sprintf(
+				'Column visibility resolver for field "%s" must return a boolean.',
+				$column->getField()
+			));
+		}
+
+		return $visible;
 	}
 
 	private function resolveFormTypeOptions(
@@ -825,10 +871,6 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 
 		if ($this->getEntity() && empty($object)) {
-			if ($this->getEntityClassMetadata()->generatorType === ClassMetadata::GENERATOR_TYPE_NONE) {
-				throw new Exception('Entity ID Generator is disabled.');
-			}
-
 			if (false !== $object = $this->findEntityObjectByRequest($request, $action)) {
 				if (!is_a($object, $this->getEntity(true)->getFqcn(), true)) {
 					throw new NotFoundHttpException('Not Found');
@@ -1804,6 +1846,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				(
 					$col->getPermission() === null || $this->isAccessGranted($col->getPermission())
 				)
+				&&
+				$this->isColumnVisibleByResolver($col)
 		);
 
 		if ($includeIdentifier) {

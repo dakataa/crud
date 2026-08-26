@@ -386,6 +386,34 @@ It can also be placed on an action method to only apply to that action, falling 
 
 Once a value is resolved (by any of the four steps above), it goes through normalization before being sent to the client: `Collection`s are joined into a comma-separated string, `DateTimeInterface` values are formatted (`dateFormat` column option, default ATOM), `BackedEnum`s are reduced to their scalar value, and remaining arrays/objects are JSON-encoded unless the column is marked `raw`. Finally, if the column declares an `enum` map, the resolved value is looked up in it for display.
 
+## Column Visibility Resolver
+
+Use `#[ColumnVisibilityResolver]` to include or exclude columns according to the current request. The resolver receives the request, the current column, and the CRUD service container, and must return a boolean. Returning `false` removes a regular column from the response metadata and row data, as well as from the generated filters, sorting, and query column selection. Entity identifiers may still be included internally because CRUD actions require them.
+
+```php
+use Dakataa\Crud\Attribute\Column;
+use Dakataa\Crud\Attribute\Resolver\ColumnVisibilityResolver;
+use Dakataa\Crud\Controller\AbstractCrudController;
+use Dakataa\Crud\Controller\CrudServiceContainer;
+use Symfony\Component\HttpFoundation\Request;
+
+#[ColumnVisibilityResolver('isPartnerColumnVisible', fields: ['partner'])]
+class BuildingController extends AbstractCrudController
+{
+    protected function isPartnerColumnVisible(
+        Request $request,
+        Column $column,
+        CrudServiceContainer $serviceContainer
+    ): bool {
+        return !$request->attributes->has('partnerId');
+    }
+}
+```
+
+The optional `fields` argument limits the resolver to the specified column fields. Without it, the resolver is called for every column. The attribute can be placed on the controller class or directly on an action method. A matching method-level resolver takes precedence over a class-level resolver.
+
+As with the other resolver attributes, `resolver` accepts a controller method name, an invokable class, or another PHP callable. Returning anything other than a boolean causes an `UnexpectedValueException`.
+
 ## How to extend templates
 
 ## Map URL parameter to entity column
