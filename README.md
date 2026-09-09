@@ -345,6 +345,33 @@ The former `beforeFormSave()` and `afterFormSave()` controller hooks have been r
 - `beforeFormSave()` → `#[FormSubmitResolver]`
 - `afterFormSave()` → `#[FormSuccessResolver]`
 
+## Additional Data Fields
+
+Use `#[Fields]` to include data in the result without displaying it as a column. List plain field names, or use a field name as a key with its `options` array as the value:
+
+```php
+use Dakataa\Crud\Attribute\Column;
+use Dakataa\Crud\Attribute\Fields;
+
+#[
+    Column('position'),
+    Column('contact.name', searchable: true, visible: false),
+    Fields([
+        'contact.uic',
+        'contact.vat',
+        'invitationSentAt' => ['dateFormat' => 'Y-m-d H:i:s'],
+        'invitationRespondedAt' => ['dateFormat' => 'Y-m-d H:i:s'],
+    ]),
+]
+class ContactController extends AbstractCrudController
+{
+}
+```
+
+Each field becomes a `Column` with `visible: false`, `searchable: false`, and `sortable: false`. The keyed arrays are passed directly to `Column`'s `options`; they do not configure its other arguments. Use an explicit `Column` for searchable fields or other column configuration.
+
+`Fields` is repeatable and follows the same class/method scope as `Column`: method-level declarations apply when that method declares its own `Entity`; otherwise class-level declarations are used. It also adds fields to columns configured through `Entity(columns: [...])`. An explicit column takes precedence over a matching field, without merging options. Repeated field names in `Fields` are included only once, using their first declaration.
+
 ## Column Value Resolver
 
 For each column, `compileEntityData()` resolves the displayed value using the following priority chain, stopping at the first one that applies:

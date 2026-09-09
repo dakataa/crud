@@ -13,6 +13,7 @@ use Dakataa\Crud\Attribute\EntitySort;
 use Dakataa\Crud\Attribute\EntityType;
 use Dakataa\Crud\Attribute\Enum\ActionVisibilityEnum;
 use Dakataa\Crud\Attribute\Enum\EntityColumnViewGroupEnum;
+use Dakataa\Crud\Attribute\Fields;
 use Dakataa\Crud\Attribute\PathParameterToFieldMap;
 use Dakataa\Crud\Attribute\QueryParameterToFieldMap;
 use Dakataa\Crud\Attribute\Resolver\ActionResolverInterface;
@@ -172,6 +173,22 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 		if (empty($entity?->columns)) {
 			$entity?->setColumns($this->getPHPAttributes(Column::class, $method));
+		}
+
+		if ($entity) {
+			$definedFields = [];
+			foreach ($entity->columns as $column) {
+				$definedFields[$column->getField()] = true;
+			}
+
+			foreach ($this->getPHPAttributes(Fields::class, $method) as $fields) {
+				foreach ($fields->getColumns() as $column) {
+					if (!isset($definedFields[$column->getField()])) {
+						$entity->columns[] = $column;
+						$definedFields[$column->getField()] = true;
+					}
+				}
+			}
 		}
 
 		return $entity;
