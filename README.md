@@ -100,6 +100,70 @@ Action metadata can include permission information, but the frontend must treat 
 Every action endpoint must still enforce access on the server side when the action is executed.
 Client-side AJAX checks are useful for hiding or disabling UI controls, but they are not a replacement for backend authorization.
 
+## Access Resolvers
+
+Use `#[AccessGrantedResolver]` to customize permission checks for columns, additional fields, ACL entries, and actions. The resolver receives the request, permission, generated security subject, default authorization result, and CRUD service container. It must return the final boolean result:
+
+```php
+use App\Entity\Building;
+use App\Entity\PropertyOwner;
+use Dakataa\Crud\Attribute\Entity;
+use Dakataa\Crud\Attribute\Resolver\AccessGrantedResolver;
+use Dakataa\Crud\Controller\CrudServiceContainer;
+use Dakataa\Crud\Security\SecuritySubject;
+use Symfony\Component\HttpFoundation\Request;
+
+#[AccessGrantedResolver('resolveAccess')]
+class OwnerController
+{
+    private function resolveAccess(
+        Request $request,
+        string $permission,
+        SecuritySubject $subject,
+        bool $granted,
+        CrudServiceContainer $serviceContainer,
+    ): bool {
+        if (!$subject->object instanceof PropertyOwner) {
+            return $granted;
+        }
+
+        return $serviceContainer->authorizationChecker->isGranted(
+            $permission,
+            new SecuritySubject(
+                new Entity(Building::class),
+                $subject->object->getProperty()->getBuilding(),
+            ),
+        );
+    }
+}
+```
+
+Use `#[ActionAccessGrantedResolver]` for additional action-specific rules. Its resolver receives the request, action, entity object, result from the regular permission check, and CRUD service container:
+
+```php
+use Dakataa\Crud\Attribute\Action;
+use Dakataa\Crud\Attribute\Resolver\ActionAccessGrantedResolver;
+
+#[ActionAccessGrantedResolver(
+    'resolveActionAccess',
+    actions: ['list', 'view', 'edit'],
+)]
+class OwnerController
+{
+    private function resolveActionAccess(
+        Request $request,
+        Action $action,
+        ?object $object,
+        bool $granted,
+        CrudServiceContainer $serviceContainer,
+    ): bool {
+        return $granted && $this->isAllowedForCurrentBuilding($request, $action, $object);
+    }
+}
+```
+
+The standard Symfony authorization result is calculated first. The class-level `AccessGrantedResolver` can then adjust the general permission result, after which `ActionAccessGrantedResolver` determines the final result for an action. `ActionAccessGrantedResolver` can be declared on the controller class or an action method, supports the optional `actions` filter, and gives a matching method-level resolver precedence over a class-level resolver. Returning anything other than a boolean causes an `UnexpectedValueException`.
+
 ## Entity Resolver
 
 Use `#[EntityResolver]` when an action must load its entity with custom lookup logic instead of the default repository identifier lookup. The attribute can be placed on the controller class or directly on an action method.

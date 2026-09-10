@@ -4,7 +4,6 @@ namespace Dakataa\Crud\Attribute;
 
 use Attribute;
 use InvalidArgumentException;
-use Symfony\Component\ExpressionLanguage\Expression;
 
 #[Attribute(Attribute::TARGET_CLASS | Attribute::TARGET_METHOD | Attribute::IS_REPEATABLE)]
 class Fields
@@ -15,7 +14,7 @@ class Fields
 	public function __construct(
 		protected array $fields,
 		protected string|array|null $roles = null,
-		protected string|Expression|null $permission = null,
+		protected ?string $permission = null,
 		protected bool $useFlatKey = false
 	) {
 	}

@@ -4,7 +4,6 @@ namespace Dakataa\Crud\Attribute;
 
 use Attribute;
 use Dakataa\Crud\Attribute\Enum\ActionVisibilityEnum;
-use Symfony\Component\ExpressionLanguage\Expression;
 use Symfony\Component\Routing\Attribute\Route;
 
 #[Attribute(Attribute::TARGET_METHOD | Attribute::TARGET_CLASS | Attribute::IS_REPEATABLE)]
@@ -20,7 +19,7 @@ class Action
 		public ?string $entity = null,
 		public ?array $options = null,
 		public ?ActionVisibilityEnum $visibility = ActionVisibilityEnum::List,
-		public null|string|Expression $permission = null
+		public ?string $permission = null
 	) {
 	}
 
@@ -107,12 +106,12 @@ class Action
 		return $this;
 	}
 
-	public function getPermission(): Expression|string|null
+	public function getPermission(): ?string
 	{
 		return $this->permission;
 	}
 
-	public function setPermission(Expression|string|null $permission): Action
+	public function setPermission(?string $permission): Action
 	{
 		$this->permission = $permission;
 

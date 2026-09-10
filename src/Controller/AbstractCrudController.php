@@ -16,6 +16,8 @@ use Dakataa\Crud\Attribute\Enum\EntityColumnViewGroupEnum;
 use Dakataa\Crud\Attribute\Fields;
 use Dakataa\Crud\Attribute\PathParameterToFieldMap;
 use Dakataa\Crud\Attribute\QueryParameterToFieldMap;
+use Dakataa\Crud\Attribute\Resolver\AccessGrantedResolver;
+use Dakataa\Crud\Attribute\Resolver\ActionAccessGrantedResolver;
 use Dakataa\Crud\Attribute\Resolver\ActionResolverInterface;
 use Dakataa\Crud\Attribute\Resolver\ColumnResolverInterface;
 use Dakataa\Crud\Attribute\Resolver\ColumnValueResolver;
@@ -2024,20 +2026,68 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 	public function isActionAccessGranted(Request $request, Action $action, object|null $object = null): bool
 	{
-		return !$action->permission || $this->isAccessGranted($action->permission, $object);
+		$granted = !$action->permission || $this->isAccessGranted($action->permission, $object);
+		if (!$this->context) {
+			return $granted;
+		}
+
+		$resolver = $this->getResolver(ActionAccessGrantedResolver::class, $action);
+		if (!$resolver) {
+			return $granted;
+		}
+
+		$resolved = $resolver->getCallable($this->getResolverContext())(
+			$request,
+			$action,
+			$object,
+			$granted,
+			$this->serviceContainer
+		);
+
+		if (!is_bool($resolved)) {
+			throw new UnexpectedValueException(sprintf(
+				'Action access granted resolver for action "%s" must return a boolean.',
+				$action->getName()
+			));
+		}
+
+		return $resolved;
 	}
 
-	public function isAccessGranted(string|Expression $permission, object|null $object = null): bool
+	public function isAccessGranted(string $permission, object|null $object = null): bool
 	{
 		$entity = $this->getEntity();
 		if ($object && $entity?->getFqcn() !== $objectFCQN = $this->serviceContainer->entityManager->getClassMetadata($object::class)->getName()) {
 			$entity = new Entity($objectFCQN);
 		}
 
-		return $this->serviceContainer->authorizationChecker->isGranted(
+		$subject = new SecuritySubject($entity, $object);
+		$granted = $this->serviceContainer->authorizationChecker->isGranted(
 			$permission,
-			new SecuritySubject($entity, $object)
+			$subject
 		);
+		if (!$this->context) {
+			return $granted;
+		}
+
+		$resolver = $this->getResolver(AccessGrantedResolver::class);
+		if (!$resolver) {
+			return $granted;
+		}
+
+		$resolved = $resolver->getCallable($this->getResolverContext())(
+			$this->context->request,
+			$permission,
+			$subject,
+			$granted,
+			$this->serviceContainer
+		);
+
+		if (!is_bool($resolved)) {
+			throw new UnexpectedValueException('Access granted resolver must return a boolean.');
+		}
+
+		return $resolved;
 	}
 
 	protected function getExpressionLanguage(): ExpressionLanguage
