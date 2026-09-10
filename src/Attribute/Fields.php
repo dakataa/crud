@@ -4,6 +4,7 @@ namespace Dakataa\Crud\Attribute;
 
 use Attribute;
 use InvalidArgumentException;
+use Symfony\Component\ExpressionLanguage\Expression;
 
 #[Attribute(Attribute::TARGET_CLASS | Attribute::TARGET_METHOD | Attribute::IS_REPEATABLE)]
 class Fields
@@ -12,7 +13,10 @@ class Fields
 	 * @param array<int|string, string|array<string, mixed>> $fields Field names or field names mapped to column options.
 	 */
 	public function __construct(
-		protected array $fields
+		protected array $fields,
+		protected string|array|null $roles = null,
+		protected string|Expression|null $permission = null,
+		protected bool $useFlatKey = false
 	) {
 	}
 
@@ -35,7 +39,10 @@ class Fields
 				searchable: false,
 				visible: false,
 				sortable: false,
-				options: $options
+				options: $options,
+				roles: $this->roles,
+				permission: $this->permission,
+				useFlatKey: $this->useFlatKey
 			);
 		}
 

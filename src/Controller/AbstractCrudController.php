@@ -46,6 +46,7 @@ use Doctrine\Persistence\ObjectRepository;
 use Doctrine\Persistence\Proxy;
 use Exception;
 use Generator;
+use InvalidArgumentException;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Csv;
 use PhpOffice\PhpSpreadsheet\Writer\Html;
@@ -181,11 +182,18 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				$definedFields[$column->getField()] = true;
 			}
 
+			$additionalFields = [];
 			foreach ($this->getPHPAttributes(Fields::class, $method) as $fields) {
 				foreach ($fields->getColumns() as $column) {
-					if (!isset($definedFields[$column->getField()])) {
+					$field = $column->getField();
+					if (isset($additionalFields[$field])) {
+						throw new InvalidArgumentException(sprintf('Field "%s" is declared more than once in Fields.', $field));
+					}
+
+					$additionalFields[$field] = true;
+					if (!isset($definedFields[$field])) {
 						$entity->columns[] = $column;
-						$definedFields[$column->getField()] = true;
+						$definedFields[$field] = true;
 					}
 				}
 			}
@@ -2019,7 +2027,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return !$action->permission || $this->isAccessGranted($action->permission, $object);
 	}
 
-	public function isAccessGranted(string $permission, object|null $object = null): bool
+	public function isAccessGranted(string|Expression $permission, object|null $object = null): bool
 	{
 		$entity = $this->getEntity();
 		if ($object && $entity?->getFqcn() !== $objectFCQN = $this->serviceContainer->entityManager->getClassMetadata($object::class)->getName()) {

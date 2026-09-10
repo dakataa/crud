@@ -347,7 +347,7 @@ The former `beforeFormSave()` and `afterFormSave()` controller hooks have been r
 
 ## Additional Data Fields
 
-Use `#[Fields]` to include data in the result without displaying it as a column. List plain field names, or use a field name as a key with its `options` array as the value:
+Use `#[Fields]` to include data in the result without displaying it as a column. List plain field names, or use a field name as a key with its `options` array as the value. The optional `roles`, `permission`, and `useFlatKey` arguments apply to every field in that declaration:
 
 ```php
 use Dakataa\Crud\Attribute\Column;
@@ -358,19 +358,24 @@ use Dakataa\Crud\Attribute\Fields;
     Column('contact.name', searchable: true, visible: false),
     Fields([
         'contact.uic',
-        'contact.vat',
         'invitationSentAt' => ['dateFormat' => 'Y-m-d H:i:s'],
         'invitationRespondedAt' => ['dateFormat' => 'Y-m-d H:i:s'],
     ]),
+    Fields(
+        fields: ['contact.vat', 'contact.privateNote'],
+        roles: ['ROLE_ADMIN', 'ROLE_ACCOUNTANT'],
+        permission: 'CONTACT_VIEW_PRIVATE_DATA',
+        useFlatKey: true,
+    ),
 ]
 class ContactController extends AbstractCrudController
 {
 }
 ```
 
-Each field becomes a `Column` with `visible: false`, `searchable: false`, and `sortable: false`. The keyed arrays are passed directly to `Column`'s `options`; they do not configure its other arguments. Use an explicit `Column` for searchable fields or other column configuration.
+Each field becomes a `Column` with `visible: false`, `searchable: false`, and `sortable: false`. The keyed arrays are passed directly to `Column`'s `options`; they do not configure its other arguments. Multiple roles are evaluated with OR semantics. When both `roles` and `permission` are present, both checks must pass. Use an explicit `Column` for searchable fields or other column configuration.
 
-`Fields` is repeatable and follows the same class/method scope as `Column`: method-level declarations apply when that method declares its own `Entity`; otherwise class-level declarations are used. It also adds fields to columns configured through `Entity(columns: [...])`. An explicit column takes precedence over a matching field, without merging options. Repeated field names in `Fields` are included only once, using their first declaration.
+`Fields` is repeatable, allowing fields with different access rules or flat-key behavior to be placed in separate declarations. It follows the same class/method scope as `Column`: method-level declarations apply when that method declares its own `Entity`; otherwise class-level declarations are used. It also adds fields to columns configured through `Entity(columns: [...])`. An explicit column takes precedence over a matching field, without merging options. Declaring the same field in more than one `Fields` entry raises a configuration error.
 
 ## Column Value Resolver
 
