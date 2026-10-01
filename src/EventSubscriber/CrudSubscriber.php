@@ -44,9 +44,15 @@ class CrudSubscriber
 		}
 
 		/** @var LoadAction|bool $loadAction */
-		$loadAction = current($event->getAttributes(LoadAction::class)) ?: new LoadAction($method);
+		$loadAction = current($event->getAttributes(LoadAction::class));
+		$isCrudController = is_a($controllerObject, AbstractCrudController::class, true);
+		if (!$loadAction && !$isCrudController) {
+			return;
+		}
 
-		if (false === is_a($controllerObject, AbstractCrudController::class, true)) {
+		$loadAction = $loadAction ?: new LoadAction($method);
+
+		if (!$isCrudController) {
 			$this->controller = new class (
 				$event->getController()[0]
 			) extends AbstractCrudController {
