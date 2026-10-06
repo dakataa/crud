@@ -23,6 +23,7 @@ use Dakataa\Crud\Attribute\Resolver\ColumnResolverInterface;
 use Dakataa\Crud\Attribute\Resolver\ColumnValueResolver;
 use Dakataa\Crud\Attribute\Resolver\ColumnVisibilityResolver;
 use Dakataa\Crud\Attribute\Resolver\EntityResolver;
+use Dakataa\Crud\Attribute\Resolver\FormRedirectResolver;
 use Dakataa\Crud\Attribute\Resolver\FormSubmitResolver;
 use Dakataa\Crud\Attribute\Resolver\FormSuccessResolver;
 use Dakataa\Crud\Attribute\Resolver\FormTypeOptionsResolver;
@@ -30,6 +31,8 @@ use Dakataa\Crud\Attribute\Resolver\QueryResolver;
 use Dakataa\Crud\Attribute\Resolver\ResolverInterface;
 use Dakataa\Crud\Attribute\Resolver\ResponseContextResolver;
 use Dakataa\Crud\Attribute\SearchableOptions;
+use Dakataa\Crud\Routing\RedirectAction;
+use Dakataa\Crud\Routing\RedirectRoute;
 use Dakataa\Crud\Security\SecuritySubject;
 use Dakataa\Crud\Service\CrudContext;
 use Dakataa\Crud\Utils\Doctrine\Paginator;
@@ -870,6 +873,24 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 	}
 
+	private function resolveFormRedirect(
+		Request $request,
+		Action $action,
+		FormInterface $form,
+	): RedirectAction|RedirectRoute|null {
+		$resolver = $this->getResolver(FormRedirectResolver::class, $action);
+		if ($resolver === null) {
+			return null;
+		}
+
+		return $resolver->getCallable($this->getResolverContext())(
+			$request,
+			$action,
+			$form,
+			$this->serviceContainer,
+		);
+	}
+
 	final protected function modify(
 		Request $request,
 		?Action $action = null,
@@ -957,6 +978,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				$object = $form->getData();
 
 				$this->resolveFormSuccess($request, $action, $form);
+				$redirectTarget = $this->resolveFormRedirect($request, $action, $form);
 
 				$messages = [
 					'success' => [
@@ -966,10 +988,20 @@ abstract class AbstractCrudController implements CrudControllerInterface
 					],
 				];
 
-				if ($action->getRoute()) {
-					$route = $this->serviceContainer->router->getRouteCollection()->get(
-						$action->getRoute()->getName()
-					);
+				$routeName = match (true) {
+					$redirectTarget instanceof RedirectAction => $this->getRoute(
+						$request,
+						$redirectTarget->actionName,
+					)->getName(),
+					$redirectTarget instanceof RedirectRoute => $redirectTarget->routeName,
+					default => $action->getRoute()?->getName(),
+				};
+				if ($routeName !== null) {
+					$route = $this->serviceContainer->router->getRouteCollection()->get($routeName);
+					if ($route === null) {
+						throw new NotFoundHttpException(sprintf('Redirect route "%s" does not exist.', $routeName));
+					}
+
 					$routeVariables = $route->compile()->getPathVariables();
 
 					$redirectParameters = array_intersect_key(
@@ -979,16 +1011,17 @@ abstract class AbstractCrudController implements CrudControllerInterface
 					if ($this->getEntity() && in_array('id', $routeVariables, true)) {
 						$redirectParameters['id'] = $this->getEntityIdentifierValueFromObject($object);
 					}
+					if ($redirectTarget !== null) {
+						$redirectParameters = array_replace($redirectParameters, $redirectTarget->parameters);
+					}
 
 					$redirect = [
-						'route' => $this->serviceContainer->router->getRouteCollection()->get(
-							$action->getRoute()->getName()
-						),
+						'route' => $route,
 						'parameters' => $redirectParameters,
 					];
 
 					$redirect['url'] = $this->serviceContainer->router->generate(
-						$action->getRoute()->getName(),
+						$routeName,
 						$redirect['parameters']
 					);
 
@@ -1002,7 +1035,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		}
 
 		if ($this->getEntity()) {
-			$id ??= $this->getEntityIdentifierValueFromObject($object);
+			$id = $this->getEntityIdentifierValueFromObject($object);
 		}
 
 		return $this->response($request, [

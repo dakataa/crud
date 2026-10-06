@@ -325,7 +325,8 @@ For a valid form, the lifecycle is:
 1. All matching `FormSubmitResolver` callbacks run.
 2. If the controller has an `#[Entity]`, the form data is persisted and flushed.
 3. All matching `FormSuccessResolver` callbacks run.
-4. The success message and optional redirect response are created.
+4. A matching `FormRedirectResolver` callback resolves an optional destination.
+5. The success message and optional redirect response are created.
 
 For an invalid form neither resolver is called. An exception from a resolver interrupts the remaining lifecycle and is not converted into a successful form response.
 
@@ -367,6 +368,44 @@ class ProductController extends AbstractCrudController
 ```
 
 Resolver callbacks should return `void`; any returned value is ignored. The attributes are repeatable and can be placed on the controller class or directly on an action method. Matching class-level resolvers run first, followed by matching method-level resolvers. Within each level, resolvers run in declaration order. Use the optional `actions` argument to limit a resolver to specific CRUD actions.
+
+### Form Redirect Resolvers
+
+Use `#[FormRedirectResolver]` when a successful form submission should redirect to a different CRUD action. The resolver runs after all `FormSuccessResolver` callbacks, so it can safely choose a destination when a success callback has removed the submitted entity.
+
+The callback receives the request, current action, submitted form, and CRUD service container. It must return a `RedirectAction`, a `RedirectRoute`, or `null`. Use `RedirectAction` for another action in the current CRUD controller and `RedirectRoute` for any named Symfony route. Returning `null` keeps the current action's redirect behavior. Path parameters already available on the request are preserved when the destination route needs them, and explicitly supplied parameters take precedence.
+
+```php
+use App\Form\ContactType;
+use Dakataa\Crud\Attribute\Action;
+use Dakataa\Crud\Attribute\EntityType;
+use Dakataa\Crud\Attribute\LoadAction;
+use Dakataa\Crud\Attribute\Resolver\FormRedirectResolver;
+use Dakataa\Crud\Routing\RedirectRoute;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\Routing\Attribute\Route;
+
+class ContactController
+{
+    #[Route('/contact', methods: ['GET', 'POST'])]
+    #[Action]
+    #[EntityType(ContactType::class)]
+    #[FormRedirectResolver('resolveRedirect')]
+    #[LoadAction('add')]
+    public function contact(Request $request): void
+    {
+    }
+
+    public function resolveRedirect(): RedirectRoute
+    {
+        return new RedirectRoute('app_home');
+    }
+}
+```
+
+The example controller does not extend `AbstractCrudController`. `#[LoadAction('add')]` delegates the empty action method to the CRUD form lifecycle. The resolver attribute can be placed on the controller class or directly on an action method. If both levels provide a matching resolver, the method-level resolver takes precedence. Use the optional `actions` argument to limit a class-level resolver to specific CRUD actions.
+
+For another action in the current CRUD controller, return `new RedirectAction('list')`. For a route from another controller, return `new RedirectRoute('app_product_list', ['account_id' => $accountId])`.
 
 ### Forms Without an Entity
 
