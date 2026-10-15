@@ -316,6 +316,44 @@ class ProductController extends AbstractCrudController
 
 The attribute is repeatable and can be placed on the controller class or on an action method. Matching class-level resolvers run first, followed by matching method-level resolvers. Each resolver receives the options returned by the previous one, so later resolvers can add, replace, or remove options. As with the other resolver attributes, `resolver` accepts a controller method name, an invokable class, or another PHP callable. Returning a value other than an array causes an `UnexpectedValueException`.
 
+## Search Form Options Resolver
+
+Use `#[FormTypeSearchOptionsResolver]` to supply request-dependent options to a
+generated filter field. It runs after the defaults and `SearchableOptions`
+options are combined, before the field is added to the filter form.
+
+```php
+use Dakataa\Crud\Attribute\Action;
+use Dakataa\Crud\Attribute\Column;
+use Dakataa\Crud\Attribute\Resolver\FormTypeSearchOptionsResolver;
+use Dakataa\Crud\Controller\AbstractCrudController;
+use Dakataa\Crud\Controller\CrudServiceContainer;
+use Symfony\Component\HttpFoundation\Request;
+
+#[FormTypeSearchOptionsResolver('resolveCategorySearchOptions', fields: ['category.id'])]
+class ProductController extends AbstractCrudController
+{
+    protected function resolveCategorySearchOptions(
+        Request $request,
+        ?Action $action,
+        Column $column,
+        array $options,
+        CrudServiceContainer $serviceContainer
+    ): ?array {
+        return [...$options, 'placeholder' => 'All categories'];
+    }
+}
+```
+
+The attribute is repeatable and supports the same callable forms as the other
+resolvers. `fields` matches column field names, such as `category.id`, rather
+than form aliases. Omit `fields` to apply it to all searchable columns.
+Class-level resolvers run first, followed by action-method resolvers; each
+receives the options returned by the previous resolver. Return the complete
+options array, or `null` to omit only that field from the filter form and stop
+resolving its options. This does not remove the column from response data,
+sorting, or query selection. Other return types raise `UnexpectedValueException`.
+
 ## Form Submit Resolvers
 
 Use `#[FormSubmitResolver]` and `#[FormSuccessResolver]` to run custom logic for a valid submitted form without coupling that logic to Doctrine persistence.

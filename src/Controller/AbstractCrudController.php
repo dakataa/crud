@@ -27,6 +27,7 @@ use Dakataa\Crud\Attribute\Resolver\FormRedirectResolver;
 use Dakataa\Crud\Attribute\Resolver\FormSubmitResolver;
 use Dakataa\Crud\Attribute\Resolver\FormSuccessResolver;
 use Dakataa\Crud\Attribute\Resolver\FormTypeOptionsResolver;
+use Dakataa\Crud\Attribute\Resolver\FormTypeSearchOptionsResolver;
 use Dakataa\Crud\Attribute\Resolver\QueryResolver;
 use Dakataa\Crud\Attribute\Resolver\ResolverInterface;
 use Dakataa\Crud\Attribute\Resolver\ResponseContextResolver;
@@ -857,6 +858,28 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return $options;
 	}
 
+	private function resolveFormTypeSearchOptions(Request $request, Column $column, array $options): ?array
+	{
+		$action = $this->getAction($request);
+		foreach ($this->getResolvers(FormTypeSearchOptionsResolver::class, $column) as $resolver) {
+			$options = $resolver->getCallable($this->getResolverContext())(
+				$request,
+				$action,
+				$column,
+				$options,
+				$this->serviceContainer
+			);
+			if ($options === null) {
+				return null;
+			}
+			if (!is_array($options)) {
+				throw new UnexpectedValueException('Form type search options resolver must return an array or null.');
+			}
+		}
+
+		return $options;
+	}
+
 	private function resolveFormSubmit(Request $request, Action $action, FormInterface $form): void
 	{
 		foreach ($this->getResolvers(FormSubmitResolver::class, $action) as $resolver) {
@@ -1353,6 +1376,11 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				];
 
 				$entityType = $column->getSearchable()->getType() ?: $entityType;
+			}
+
+			$columnOptions = $this->resolveFormTypeSearchOptions($request, $column, $columnOptions);
+			if ($columnOptions === null) {
+				continue;
 			}
 
 			switch ($entityType) {
