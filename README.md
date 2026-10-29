@@ -193,6 +193,67 @@ class ProductController extends AbstractCrudController
 
 An entity resolver can be limited to specific actions with `actions: [...]`. For the current action, a matching method-level resolver takes priority; when there is none, the matching class-level resolver is used. Like the other resolver attributes, `resolver` accepts a controller method name, an invokable class, or another PHP callable. The callable receives `Request` and `CrudServiceContainer` and must return an instance of the configured entity class or `null` when the entity cannot be found.
 
+## Preload Resolver
+
+Use `#[PreloadResolver]` to batch-load related data or populate request-local caches
+after the action has loaded its results and before it compiles response rows and
+their ACL metadata. The callback receives the request, current action, original
+runtime context, and CRUD service container, and must not return a value:
+
+```php
+use Dakataa\Crud\Attribute\Action;
+use Dakataa\Crud\Attribute\Resolver\PreloadResolver;
+use Dakataa\Crud\Controller\AbstractCrudController;
+use Dakataa\Crud\Controller\CrudServiceContainer;
+use Symfony\Component\HttpFoundation\Request;
+
+#[PreloadResolver('preloadProducts', actions: ['list', 'export'])]
+class ProductController extends AbstractCrudController
+{
+    public function preloadProducts(
+        Request $request,
+        Action $action,
+        array $context,
+        CrudServiceContainer $serviceContainer
+    ): void {
+        $products = array_map(
+            fn(array|object $item) => is_array($item) ? $item[0] : $item,
+            $context['items'],
+        );
+
+        $this->summaryProvider->preload($products);
+    }
+}
+```
+
+The example assumes an application summary provider injected into the controller.
+Subsequent column value resolvers, row permission checks and response context
+resolvers can use its populated cache.
+
+The built-in read actions invoke matching callbacks once, including empty results:
+
+| Action | Runtime context | Timing |
+| --- | --- | --- |
+| `list` | `items`, pagination `meta` | After pagination; only the returned page is supplied. |
+| `view` | `object` | After the entity is found and the action access check succeeds. |
+| `export` | `items` | After loading the export results, before compiling headers and rows. |
+
+Items retain their original Doctrine result shape, including mixed rows containing
+the entity at index `0` and any additional scalar values. Context is internal and
+is not automatically exposed in the response. Callbacks prepare caches; they do
+not replace the result set, alter pagination, or supply response context.
+
+The attribute is repeatable on classes and action methods. Matching class-level
+callbacks run first, then matching method-level callbacks, in declaration order.
+The optional `actions` filter and callable forms follow `ResponseContextResolver`.
+A non-null return value raises `UnexpectedValueException`; callback exceptions
+propagate and stop subsequent processing.
+
+Query resolvers, filter construction, sorting and their column checks happen
+before results exist, so they cannot depend on preloaded data. Object-level view
+authorization also happens before preloading. Form and delete actions do not run
+this hook. Use `ResponseContextResolver` separately to expose additional data.
+
 ## Response Context Resolver
 
 Use `#[ResponseContextResolver]` to add application-specific display data to a CRUD response without changing the built-in action workflow. The resolved data is added under the `context` key in both JSON responses and Twig template variables.
@@ -488,7 +549,7 @@ The former `beforeFormSave()` and `afterFormSave()` controller hooks have been r
 
 ## Additional Data Fields
 
-Use `#[Fields]` to include data in the result without displaying it as a column. List plain field names, or use a field name as a key with its `options` array as the value. The optional `roles`, `permission`, and `useFlatKey` arguments apply to every field in that declaration:
+Use `#[Fields]` to include data in the result without displaying it as a column. List plain field names, or use a field name as a key with its `options` array as the value. The optional `roles`, `permission`, `useFlatKey`, and `raw` arguments apply to every field in that declaration:
 
 ```php
 use Dakataa\Crud\Attribute\Column;
@@ -516,7 +577,12 @@ class ContactController extends AbstractCrudController
 
 Each field becomes a `Column` with `visible: false`, `searchable: false`, and `sortable: false`. The keyed arrays are passed directly to `Column`'s `options`; they do not configure its other arguments. Multiple roles are evaluated with OR semantics. When both `roles` and `permission` are present, both checks must pass. Use an explicit `Column` for searchable fields or other column configuration.
 
-`Fields` is repeatable, allowing fields with different access rules or flat-key behavior to be placed in separate declarations. It follows the same class/method scope as `Column`: method-level declarations apply when that method declares its own `Entity`; otherwise class-level declarations are used. It also adds fields to columns configured through `Entity(columns: [...])`. An explicit column takes precedence over a matching field, without merging options. Declaring the same field in more than one `Fields` entry raises a configuration error.
+`raw` defaults to `false`, preserving existing normalization. Use
+`#[Fields(['tags'], raw: true)]` when a field or column value resolver returns
+an array that should remain an array in the response instead of a JSON-encoded
+string. This uses the same normalization rules as `Column(raw: true)`.
+
+`Fields` is repeatable, allowing fields with different access rules, raw values or flat-key behavior to be placed in separate declarations. It follows the same class/method scope as `Column`: method-level declarations apply when that method declares its own `Entity`; otherwise class-level declarations are used. It also adds fields to columns configured through `Entity(columns: [...])`. An explicit column takes precedence over a matching field, without merging options. Declaring the same field in more than one `Fields` entry raises a configuration error.
 
 ## Column Value Resolver
 

@@ -15,7 +15,8 @@ class Fields
 		protected array $fields,
 		protected string|array|null $roles = null,
 		protected ?string $permission = null,
-		protected bool $useFlatKey = false
+		protected bool $useFlatKey = false,
+		protected bool $raw = false
 	) {
 	}
 
@@ -35,6 +36,7 @@ class Fields
 
 			$columns[] = new Column(
 				$field,
+				raw: $this->raw,
 				searchable: false,
 				visible: false,
 				sortable: false,

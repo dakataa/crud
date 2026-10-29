@@ -28,6 +28,7 @@ use Dakataa\Crud\Attribute\Resolver\FormSubmitResolver;
 use Dakataa\Crud\Attribute\Resolver\FormSuccessResolver;
 use Dakataa\Crud\Attribute\Resolver\FormTypeOptionsResolver;
 use Dakataa\Crud\Attribute\Resolver\FormTypeSearchOptionsResolver;
+use Dakataa\Crud\Attribute\Resolver\PreloadResolver;
 use Dakataa\Crud\Attribute\Resolver\QueryResolver;
 use Dakataa\Crud\Attribute\Resolver\ResolverInterface;
 use Dakataa\Crud\Attribute\Resolver\ResponseContextResolver;
@@ -502,6 +503,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 		['items' => $items, 'meta' => $meta] = $paginator->paginate();
 		$items = iterator_to_array($items);
+		$context = ['items' => $items, 'meta' => $meta];
+		$this->resolvePreload($request, $context);
 
 		return $this->response($request, [
 			'title' => $action->title ?: StringHelper::titlize($this->getEntityShortName()),
@@ -532,10 +535,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			],
 			'sort' => $sorting,
 			'action' => $this->getActions($request, true),
-		], context: [
-			'items' => $items,
-			'meta' => $meta,
-		], defaultTemplate: 'list');
+		], context: $context, defaultTemplate: 'list');
 	}
 
 	/**
@@ -569,6 +569,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		$queryBuilder = $this->createQueryBuilder($request, EntityColumnViewGroupEnum::Export);
 
 		$objects = $queryBuilder->getQuery()->getResult();
+		$this->resolvePreload($request, ['items' => $objects]);
 
 		//Excel
 		$spreadsheet = new Spreadsheet();
@@ -651,6 +652,9 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			throw new AccessDeniedException();
 		}
 
+		$context = ['object' => $object];
+		$this->resolvePreload($request, $context);
+
 		$queryViewGroup = $request->query->get('viewGroup');
 		$viewGroup = EntityColumnViewGroupEnum::tryFrom($queryViewGroup ?: 'view') ?: $queryViewGroup ?: EntityColumnViewGroupEnum::View;
 
@@ -663,7 +667,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				'acl' => $this->getACLs($request, [$object]),
 			],
 			'title' => $action?->title,
-		], context: ['object' => $object], defaultTemplate: 'view');
+		], context: $context, defaultTemplate: 'view');
 	}
 
 	final protected function getMappedFields(Request $request, Action $action): Generator
@@ -1191,6 +1195,22 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	public function getResolverContext(): object
 	{
 		return $this;
+	}
+
+	private function resolvePreload(Request $request, array $context): void
+	{
+		$action = $this->getAction($request);
+		foreach ($this->getResolvers(PreloadResolver::class, $action) as $resolver) {
+			$result = $resolver->getCallable($this->getResolverContext())(
+				$request,
+				$action,
+				$context,
+				$this->serviceContainer,
+			);
+			if ($result !== null) {
+				throw new UnexpectedValueException('Preload resolver must not return a value.');
+			}
+		}
 	}
 
 	private function resolveResponseContext(Request $request, array $context): array
