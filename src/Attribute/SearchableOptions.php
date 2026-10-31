@@ -11,13 +11,26 @@ class SearchableOptions
 	public function __construct(
 		protected ?string $field = null,
 		protected ?string $type = null,
-		protected ?array $options = null
+		protected ?array $options = null,
+		protected bool $exposed = true
 	) {
 	}
 
 	public function getField(): ?string
 	{
 		return $this->field;
+	}
+
+	public function isExposed(): bool
+	{
+		return $this->exposed;
+	}
+
+	public function setExposed(bool $exposed): SearchableOptions
+	{
+		$this->exposed = $exposed;
+
+		return $this;
 	}
 
 	public function setField(?string $field): SearchableOptions

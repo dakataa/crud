@@ -658,3 +658,46 @@ As with the other resolver attributes, `resolver` accepts a controller method na
 ## Map URL parameter to entity column
 
 ## How to ...
+
+
+## Column view groups
+
+Use `Column(group: ['list', 'view'])` to include a column only in those views.
+Columns without a group participate in every view. A list request selects a
+custom group with `?viewGroup=compact`; ordinary list and object view requests
+default to `list` and `view`, respectively.
+
+The selected list group is used for the filter form, sorting, query construction,
+column metadata and row serialization. `getFilterForm($request, $viewGroup)` can
+receive an explicit group; without one it reads `viewGroup` with a `list` default.
+Primary identifiers remain available in row data when their display column is
+outside the selected group.
+
+View groups are presentation choices, not authorization. Use action/column
+permissions and application query restrictions for access control. Use
+`visible: false` or `Fields` for data that should remain available without a
+visible column. A `ColumnVisibilityResolver` returning false removes a column
+from discovery, including filtering and query construction.
+
+
+## Filters without frontend controls
+
+```php
+Column('user.id', visible: false, searchable: new SearchableOptions(exposed: false)),
+```
+
+`SearchableOptions.exposed` defaults to `true`. Setting it to `false` keeps the
+filter in the internal Symfony form, including input transformation, validation
+and normal query filtering. Clients can still submit `filter[user_Id]`.
+
+The dynamic filter form uses `CrudFilterType`. Its `finishView()` omits unexposed
+child views and removes their entries from parent `data` and `value`. Every normal
+`$form->createView()` call applies the policy, including custom responses. The
+original form and its data are unchanged. Exposure is carried in each field
+configuration through `CrudFilterType::FIELD_EXPOSED_ATTRIBUTE`. This option
+controls the filter description; column visibility, row data and authorization
+remain separate concerns.
+
+Frontends should derive filter controls and applied-filter labels from the
+returned form description. Required scope parameters must still be preserved
+when replacing or clearing the request query.

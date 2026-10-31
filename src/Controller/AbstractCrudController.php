@@ -33,6 +33,7 @@ use Dakataa\Crud\Attribute\Resolver\QueryResolver;
 use Dakataa\Crud\Attribute\Resolver\ResolverInterface;
 use Dakataa\Crud\Attribute\Resolver\ResponseContextResolver;
 use Dakataa\Crud\Attribute\SearchableOptions;
+use Dakataa\Crud\Form\Type\CrudFilterType;
 use Dakataa\Crud\Routing\RedirectAction;
 use Dakataa\Crud\Routing\RedirectRoute;
 use Dakataa\Crud\Security\SecuritySubject;
@@ -70,7 +71,6 @@ use Symfony\Component\ExpressionLanguage\ExpressionLanguage;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
 use Symfony\Component\Form\Extension\Core\Type\CollectionType;
 use Symfony\Component\Form\Extension\Core\Type\DateType;
-use Symfony\Component\Form\Extension\Core\Type\FormType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\Form\FormInterface;
 use Symfony\Component\Form\FormTypeInterface;
@@ -483,17 +483,16 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			throw new AccessDeniedException();
 		}
 
-		$filterForm = $this->getFilterForm($request);
+		$viewGroup = $this->resolveViewGroup($request, EntityColumnViewGroupEnum::List);
+		$filterForm = $this->getFilterForm($request, $viewGroup);
 		$batchForm = $this->handleBatch($request);
 		if ($batchForm instanceof Response) {
 			return $batchForm;
 		}
 
-		$queryViewGroup = $request->query->get('viewGroup');
-		$viewGroup = EntityColumnViewGroupEnum::tryFrom($queryViewGroup ?: 'list') ?: $queryViewGroup ?: EntityColumnViewGroupEnum::List;
-		$sorting = $this->prepareSorting($request);
+		$sorting = $this->prepareSorting($request, $viewGroup);
 		$paginator = new Paginator(
-			$this->createQueryBuilder($request),
+			$this->createQueryBuilder($request, $viewGroup),
 			$request->query->getInt('page', 1),
 			$this->getEntity()?->isPagination() && (count(
 					$this->getEntityClassMetadata()->getIdentifierFieldNames()
@@ -655,8 +654,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		$context = ['object' => $object];
 		$this->resolvePreload($request, $context);
 
-		$queryViewGroup = $request->query->get('viewGroup');
-		$viewGroup = EntityColumnViewGroupEnum::tryFrom($queryViewGroup ?: 'view') ?: $queryViewGroup ?: EntityColumnViewGroupEnum::View;
+		$viewGroup = $this->resolveViewGroup($request, EntityColumnViewGroupEnum::View);
 
 		return $this->response($request, [
 			'entity' => [
@@ -1354,7 +1352,17 @@ abstract class AbstractCrudController implements CrudControllerInterface
 	/**
 	 * @throws Exception
 	 */
-	protected function getFilterForm(Request $request): FormInterface|null
+	private function resolveViewGroup(Request $request, EntityColumnViewGroupEnum $default): EntityColumnViewGroupEnum|string
+	{
+		$group = $request->query->get('viewGroup') ?: $default->value;
+
+		return EntityColumnViewGroupEnum::tryFrom($group) ?? $group;
+	}
+
+	protected function getFilterForm(
+		Request $request,
+		EntityColumnViewGroupEnum|string|null $viewGroup = null,
+	): FormInterface|null
 	{
 		if (!$this->getEntity()?->filter) {
 			return null;
@@ -1362,7 +1370,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 
 		$formBuilder = $this->serviceContainer->formFactory->createNamedBuilder(
 			'filter',
-			FormType::class,
+			CrudFilterType::class,
 			null,
 			[
 				...($this->serviceContainer->parameterBag->get(
@@ -1371,7 +1379,8 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			]
 		)->setMethod(Request::METHOD_GET);
 
-		foreach ($this->buildColumns(searchable: true) as $columnData) {
+		$viewGroup ??= $this->resolveViewGroup($request, EntityColumnViewGroupEnum::List);
+		foreach ($this->buildColumns($viewGroup, searchable: true) as $columnData) {
 			[
 				'fqcn' => $fqcn,
 				'type' => $type,
@@ -1443,6 +1452,10 @@ abstract class AbstractCrudController implements CrudControllerInterface
 						) ? $entityType : TextType::class,
 						$columnOptions
 					);
+			}
+
+			if ($column->getSearchable() instanceof SearchableOptions && !$column->getSearchable()->isExposed()) {
+				$formBuilder->get($formFieldKey)->setAttribute(CrudFilterType::FIELD_EXPOSED_ATTRIBUTE, false);
 			}
 		}
 
@@ -1648,7 +1661,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 			$query->groupBy($groupByField);
 		}
 
-		$filters = $this->getFilterForm($request)?->getData();
+		$filters = $this->getFilterForm($request, $viewGroup)?->getData();
 		$sortingFields = array_filter($this->prepareSorting($request, $viewGroup));
 		$action = $this->getAction($request);
 

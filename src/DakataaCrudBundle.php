@@ -10,6 +10,7 @@ use Dakataa\Crud\Command\MakerController;
 use Dakataa\Crud\Controller\CrudServiceContainer;
 use Dakataa\Crud\Controller\GeneralController;
 use Dakataa\Crud\EventSubscriber\CrudSubscriber;
+use Dakataa\Crud\Form\Type\CrudFilterType;
 use Dakataa\Crud\Serializer\CrudSerializer;
 use Dakataa\Crud\Service\ActionCollection;
 use Dakataa\Crud\Service\Navigation;
@@ -33,6 +34,11 @@ class DakataaCrudBundle extends AbstractBundle
 
 	public function loadExtension(array $config, ContainerConfigurator $container, ContainerBuilder $builder): void
 	{
+		$container
+			->services()
+			->set(CrudFilterType::class, CrudFilterType::class)
+			->autoconfigure();
+
 		$container
 			->services()
 			->set(Navigation::class, Navigation::class)
