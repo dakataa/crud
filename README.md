@@ -3,6 +3,8 @@ Create fast and easy CRUD Dashboard.
 This package itself works as a REST API and can be used
 with ReactJS Package [@dakataa/crud-react](https://github.com/dakataa/crud-react), or you can enable **Twig** version by adding additional package [@dakataa/crud-twig](https://github.com/dakataa/crud-twig).
 
+See [CHANGELOG.md](CHANGELOG.md) for release notes and migration guidance.
+
 ## Batch authorization
 
 Batch methods such as `batchDelete()` and `batchArchive()` require a configured
