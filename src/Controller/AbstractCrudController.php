@@ -1132,6 +1132,10 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		if ($request->isMethod(Request::METHOD_POST)) {
 			$form->handleRequest($request);
 			if ($form->isSubmitted() && $form->isValid()) {
+				$action = $this->getAction($request, $form->get('method')->getData());
+				if (!$action) {
+					throw new AccessDeniedException('This batch action is not enabled.');
+				}
 				$method = Container::camelize('batch_'.Container::underscore($form->get('method')->getData()));
 
 				if (!method_exists($this, $method)) {
@@ -1160,6 +1164,11 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				}
 
 				$objects = $query->where($criteria)->getQuery()->getResult();
+				foreach ($objects as $object) {
+					if (!$this->isActionAccessGranted($request, $action, $object)) {
+						throw new AccessDeniedException();
+					}
+				}
 				if ($response = $this->$method($request, $objects)) {
 					if ($response instanceof Response) {
 						return $response;

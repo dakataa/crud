@@ -3,6 +3,20 @@ Create fast and easy CRUD Dashboard.
 This package itself works as a REST API and can be used
 with ReactJS Package [@dakataa/crud-react](https://github.com/dakataa/crud-react), or you can enable **Twig** version by adding additional package [@dakataa/crud-twig](https://github.com/dakataa/crud-twig).
 
+## Batch authorization
+
+Batch methods such as `batchDelete()` and `batchArchive()` require a configured
+CRUD action named `delete` or `archive`, respectively. Set its `permission` using
+the usual `Action` attribute. `handleBatch()` checks `isActionAccessGranted()` for
+every selected object before invoking the handler, including custom handlers.
+This uses the action's permission and registered access resolvers. If any object
+is denied, the whole batch is rejected before the handler runs. A batch method
+alone does not enable the corresponding action.
+
+Single deletion performs its object access check in `delete()`. The protected
+`batchDelete()` method only performs persistence; custom code calling it directly
+must authorize the objects first.
+
 ## How to Install
 1. Setup Symfony Project.
 	```shell
@@ -101,6 +115,7 @@ Every action endpoint must still enforce access on the server side when the acti
 Client-side AJAX checks are useful for hiding or disabling UI controls, but they are not a replacement for backend authorization.
 
 ## Access Resolvers
+
 
 Use `#[AccessGrantedResolver]` to customize permission checks for columns, additional fields, ACL entries, and actions. The resolver receives the request, permission, generated security subject, default authorization result, and CRUD service container. It must return the final boolean result:
 
@@ -426,6 +441,10 @@ For a valid form, the lifecycle is:
 3. All matching `FormSuccessResolver` callbacks run.
 4. A matching `FormRedirectResolver` callback resolves an optional destination.
 5. The success message and optional redirect response are created.
+
+Authorization runs before form creation. Forms must validate access to protected
+relations selected during submission; CRUD does not repeat the initial action
+check after binding. Callbacks must authorize additional domain changes they make.
 
 For an invalid form neither resolver is called. An exception from a resolver interrupts the remaining lifecycle and is not converted into a successful form response.
 
