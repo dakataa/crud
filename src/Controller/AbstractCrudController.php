@@ -665,6 +665,10 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				'acl' => $this->getACLs($request, [$object]),
 			],
 			'title' => $action?->title,
+			'action' => array_values(array_filter(
+				$this->getActions($request, true, $object),
+				fn(Action $item) => $item->visibility === ActionVisibilityEnum::Object,
+			)),
 		], context: $context, defaultTemplate: 'view');
 	}
 
@@ -2074,7 +2078,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 		return new Route($route->getPath(), $routeName, $route->getMethods());
 	}
 
-	public function getActions(Request $request, bool $onlyVisible = false): array
+	public function getActions(Request $request, bool $onlyVisible = false, ?object $object = null): array
 	{
 		return array_values(
 			array_filter(
@@ -2093,7 +2097,7 @@ abstract class AbstractCrudController implements CrudControllerInterface
 				fn(Action $action) => !$onlyVisible || ($this->isActionVisible(
 							$request,
 							$action
-						) && $this->isActionAccessGranted($request, $action))
+						) && $this->isActionAccessGranted($request, $action, $object))
 			)
 		);
 	}

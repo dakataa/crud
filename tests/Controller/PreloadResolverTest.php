@@ -14,6 +14,7 @@ use Dakataa\Crud\Controller\AbstractCrudController;
 use Dakataa\Crud\Controller\CrudServiceContainer;
 use Dakataa\Crud\Serializer\CrudSerializer;
 use Dakataa\Crud\Service\CrudContext;
+use Dakataa\Crud\Service\ActionCollection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Mapping\ClassMetadata;
@@ -182,6 +183,10 @@ class PreloadResolverTest extends TestCase
 		$controller->queryBuilder->method('getQuery')->willReturn($query);
 		$services = (new ReflectionClass(CrudServiceContainer::class))->newInstanceWithoutConstructor();
 		$services->entityManager = $manager;
+		$services->actionCollection = $this->createStub(ActionCollection::class);
+		$services->actionCollection->method('load')->willReturnCallback(function () {
+			yield from [];
+		});
 		$services->serializer = new CrudSerializer($this->createStub(RouterInterface::class));
 		$services->templateProvider = null;
 		$controller->setServiceContainer($services);
